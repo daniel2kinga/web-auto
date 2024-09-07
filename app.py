@@ -18,7 +18,7 @@ def configurar_driver():
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     data = request.json
-    url = data.get('url')
+    url = data.get('https://parceladigital.com/articulos')
     if not url:
         return jsonify({"error": "No se proporcionó URL"}), 400
 
