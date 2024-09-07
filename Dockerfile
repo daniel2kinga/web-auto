@@ -20,14 +20,12 @@ RUN apt-get update && apt-get install -y \
     libappindicator1 \
     xdg-utils
 
-# Instalar Google Chrome
+# Instalar Google Chrome versión específica
 RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && dpkg -i google-chrome-stable_current_amd64.deb; apt-get -fy install
+    && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
 
-# Descargar ChromeDriver y moverlo al path correcto
-RUN CHROME_VERSION=$(google-chrome --version | grep -oP '\d{2,3}') \
-    && DRIVER_VERSION=$(wget -qO- "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION") \
-    && wget https://chromedriver.storage.googleapis.com/$DRIVER_VERSION/chromedriver_linux64.zip \
+# Descargar ChromeDriver versión 114 (correspondiente a la versión de Chrome instalada)
+RUN wget https://chromedriver.storage.googleapis.com/114.0.5735.90/chromedriver_linux64.zip \
     && unzip chromedriver_linux64.zip \
     && chmod +x chromedriver \
     && mv chromedriver /usr/local/bin/
