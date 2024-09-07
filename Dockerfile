@@ -24,8 +24,9 @@ RUN apt-get update && apt-get install -y \
 RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
 
-# Descargar ChromeDriver compatible con la versión 128 de Chrome
-RUN DRIVER_VERSION=$(curl -sS https://chromedriver.storage.googleapis.com/LATEST_RELEASE_128) \
+# Obtener la versión exacta de Chrome instalada y usarla para descargar ChromeDriver
+RUN CHROME_VERSION=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+') \
+    && DRIVER_VERSION=$(curl -sS https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_VERSION) \
     && wget https://chromedriver.storage.googleapis.com/$DRIVER_VERSION/chromedriver_linux64.zip \
     && unzip chromedriver_linux64.zip \
     && chmod +x chromedriver \
@@ -49,5 +50,3 @@ EXPOSE 5000
 
 # Ejecutar la aplicación con Gunicorn
 CMD exec gunicorn -w 4 -b :${PORT} app:app
-
-
