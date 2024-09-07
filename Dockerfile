@@ -20,12 +20,13 @@ RUN apt-get update && apt-get install -y \
     libappindicator1 \
     xdg-utils
 
-# Instalar Google Chrome versión específica
+# Instalar Google Chrome versión estable
 RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
 
-# Descargar ChromeDriver versión 114 (correspondiente a la versión de Chrome instalada)
-RUN wget https://chromedriver.storage.googleapis.com/114.0.5735.90/chromedriver_linux64.zip \
+# Descargar ChromeDriver compatible con la versión 128 de Chrome
+RUN DRIVER_VERSION=$(curl -sS https://chromedriver.storage.googleapis.com/LATEST_RELEASE_128) \
+    && wget https://chromedriver.storage.googleapis.com/$DRIVER_VERSION/chromedriver_linux64.zip \
     && unzip chromedriver_linux64.zip \
     && chmod +x chromedriver \
     && mv chromedriver /usr/local/bin/
@@ -46,6 +47,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Exponer el puerto en el que correrá la aplicación Flask
 EXPOSE 5000
 
-# Ejecutar la aplicación con Gunicorn, usando la variable de entorno $PORT
+# Ejecutar la aplicación con Gunicorn
 CMD exec gunicorn -w 4 -b :${PORT} app:app
+
 
