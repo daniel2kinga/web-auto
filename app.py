@@ -15,7 +15,7 @@ def configurar_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
     
-    # WebDriver Manager se encarga de descargar la versión correcta de ChromeDriver
+    # WebDriver Manager solo necesita recibir las opciones, sin necesidad de pasar ambas variables
     driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
     return driver
 
@@ -47,3 +47,4 @@ def extraer_pagina():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+
