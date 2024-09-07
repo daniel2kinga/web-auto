@@ -4,8 +4,8 @@ FROM python:3.11-slim
 # Instalar dependencias necesarias
 RUN apt-get update && apt-get install -y \
     wget \
-    unzip \
     curl \
+    unzip \
     gnupg \
     apt-transport-https \
     ca-certificates \
@@ -24,15 +24,9 @@ RUN apt-get update && apt-get install -y \
 RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
 
-# Descargar ChromeDriver versión 128 manualmente
-RUN wget https://chromedriver.storage.googleapis.com/128.0.6613.119/chromedriver_linux64.zip \
-    && unzip chromedriver_linux64.zip \
-    && chmod +x chromedriver \
-    && mv chromedriver /usr/local/bin/
-
 # Configurar la variable de entorno para Chrome en modo headless
-ENV PATH="/usr/local/bin/chromedriver:${PATH}"
-ENV CHROME_BIN="/usr/bin/google-chrome"
+ENV CHROME_BIN=/usr/bin/google-chrome
+ENV PATH=$PATH:/usr/local/bin/
 
 # Crear un directorio de trabajo
 WORKDIR /app
@@ -48,3 +42,4 @@ EXPOSE 5000
 
 # Ejecutar la aplicación con Gunicorn
 CMD exec gunicorn -w 4 -b :${PORT} app:app
+
