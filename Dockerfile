@@ -24,8 +24,8 @@ RUN apt-get update && apt-get install -y \
 RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
 
-# Descargar la última versión estable de ChromeDriver
-RUN wget https://chromedriver.storage.googleapis.com/`curl -s https://chromedriver.storage.googleapis.com/LATEST_RELEASE`/chromedriver_linux64.zip \
+# Descargar ChromeDriver versión 128 manualmente
+RUN wget https://chromedriver.storage.googleapis.com/128.0.6613.119/chromedriver_linux64.zip \
     && unzip chromedriver_linux64.zip \
     && chmod +x chromedriver \
     && mv chromedriver /usr/local/bin/
