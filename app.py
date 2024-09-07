@@ -14,7 +14,9 @@ def configurar_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
-    driver = webdriver.Chrome(executable_path="/usr/local/bin/chromedriver", options=chrome_options)
+    
+    # No se necesita 'executable_path' en Selenium 4.x
+    driver = webdriver.Chrome(options=chrome_options)
     return driver
 
 # Ruta para extraer contenido de una página web
