@@ -3,10 +3,10 @@ import time
 from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager  # Importar WebDriver Manager
 
 app = Flask(__name__)
 
-# Función para configurar Selenium con Chrome en modo headless
 def configurar_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -15,11 +15,10 @@ def configurar_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
     
-    # No se necesita 'executable_path' en Selenium 4.x
-    driver = webdriver.Chrome(options=chrome_options)
+    # WebDriver Manager se encarga de descargar la versión correcta de ChromeDriver
+    driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
     return driver
 
-# Ruta para extraer contenido de una página web
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     try:
@@ -31,7 +30,7 @@ def extraer_pagina():
 
         driver = configurar_driver()
         driver.get(url)
-        time.sleep(5)  # Esperar a que cargue la página
+        time.sleep(5)  # Esperar a que la página cargue completamente
 
         # Extraer contenido de la página
         contenido = driver.find_elements_by_tag_name("p")
@@ -41,9 +40,10 @@ def extraer_pagina():
         return jsonify({"url": url, "contenido": texto_extraido})
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        app.logger.error(f"Error al procesar la solicitud: {e}")
+        return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
 
 # Configurar el servidor para usar el puerto proporcionado por Railway
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))  # Usa el puerto de la variable de entorno 'PORT' o 5000 por defecto
+    port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
