@@ -46,6 +46,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Exponer el puerto en el que correrá la aplicación Flask
 EXPOSE 5000
 
-# Ejecutar la aplicación con Gunicorn
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:$PORT", "app:app"]
+# Ejecutar la aplicación con Gunicorn, usando la variable de entorno $PORT
+CMD exec gunicorn -w 4 -b :${PORT} app:app
 
