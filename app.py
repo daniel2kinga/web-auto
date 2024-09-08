@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By  # Importamos 'By' para la búsqueda de elementos
+from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
@@ -21,6 +21,32 @@ def configurar_driver():
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
+def interactuar_con_pagina(driver):
+    # Espera a que los elementos se carguen
+    time.sleep(2)
+
+    # Ejemplo 1: Buscar un botón y hacer clic (suponiendo que el botón tiene el tag <button>)
+    try:
+        boton = driver.find_element(By.TAG_NAME, "button")
+        boton.click()  # Hacer clic en el botón
+        time.sleep(2)  # Esperar después de hacer clic
+    except:
+        app.logger.info("No se encontró ningún botón en la página")
+
+    # Ejemplo 2: Buscar un enlace (<a>) y seguir el enlace
+    try:
+        enlaces = driver.find_elements(By.TAG_NAME, "a")
+        for enlace in enlaces:
+            href = enlace.get_attribute("href")
+            if href:
+                app.logger.info(f"Siguiendo el enlace: {href}")
+                driver.get(href)  # Navegar a la URL del enlace
+                time.sleep(2)  # Esperar después de navegar
+    except:
+        app.logger.info("No se encontraron enlaces en la página")
+    
+    return driver.page_source  # Devolver el HTML final de la página
+
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     try:
@@ -35,7 +61,10 @@ def extraer_pagina():
         driver.get(url)
         time.sleep(5)  # Esperar a que la página cargue completamente
 
-        # Extraer contenido de la página utilizando 'By.TAG_NAME'
+        # Interactuar con la página (clic en botones, seguir enlaces, etc.)
+        html_final = interactuar_con_pagina(driver)
+
+        # Extraer el contenido final de la página
         contenido = driver.find_elements(By.TAG_NAME, "p")
         texto_extraido = " ".join([element.text for element in contenido])
 
