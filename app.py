@@ -4,6 +4,7 @@ from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service  # Importamos el servicio correctamente
 
 app = Flask(__name__)
 
@@ -15,9 +16,9 @@ def configurar_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
     
-    # En Selenium 4, solo usamos ChromeDriverManager().install() sin el argumento 'options' en el instanciador
-    service = webdriver.chrome.service.Service(ChromeDriverManager().install())  # Crear servicio con WebDriver Manager
-    driver = webdriver.Chrome(service=service, options=chrome_options)  # Pasar 'service' y 'options' por separado
+    # Usar el servicio de ChromeDriver para evitar conflicto de 'options'
+    service = Service(ChromeDriverManager().install())  # WebDriver Manager maneja el servicio
+    driver = webdriver.Chrome(service=service, options=chrome_options)  # Pasamos 'service' y 'options' correctamente
     return driver
 
 @app.route('/extraer', methods=['POST'])
