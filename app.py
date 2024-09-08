@@ -3,7 +3,8 @@ import time
 from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service  # Importamos Service correctamente
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By  # Importamos 'By' para la búsqueda de elementos
 from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
@@ -16,10 +17,7 @@ def configurar_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
     
-    # Usar WebDriver Manager para configurar el servicio de ChromeDriver
     service = Service(ChromeDriverManager().install())
-    
-    # Inicializar el WebDriver usando el servicio y las opciones, sin conflictos
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
@@ -37,8 +35,8 @@ def extraer_pagina():
         driver.get(url)
         time.sleep(5)  # Esperar a que la página cargue completamente
 
-        # Extraer contenido de la página
-        contenido = driver.find_elements_by_tag_name("p")
+        # Extraer contenido de la página utilizando 'By.TAG_NAME'
+        contenido = driver.find_elements(By.TAG_NAME, "p")
         texto_extraido = " ".join([element.text for element in contenido])
 
         driver.quit()
