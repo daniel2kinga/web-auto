@@ -15,8 +15,9 @@ def configurar_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
     
-    # Usar WebDriver Manager sin 'executable_path'
-    driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
+    # En Selenium 4, solo usamos ChromeDriverManager().install() sin el argumento 'options' en el instanciador
+    service = webdriver.chrome.service.Service(ChromeDriverManager().install())  # Crear servicio con WebDriver Manager
+    driver = webdriver.Chrome(service=service, options=chrome_options)  # Pasar 'service' y 'options' por separado
     return driver
 
 @app.route('/extraer', methods=['POST'])
@@ -27,7 +28,6 @@ def extraer_pagina():
             return jsonify({"error": "No se proporcionó URL"}), 400
 
         url = data['url']
-        
         app.logger.info(f"Extrayendo contenido de la URL: {url}")
         
         driver = configurar_driver()
