@@ -5,6 +5,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
@@ -16,14 +18,20 @@ def configurar_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
-    
+    chrome_options.add_argument("--disable-cache")  # Desactivar el caché del navegador
+
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
-def interactuar_con_pagina(driver):
-    # Espera a que los elementos se carguen
-    time.sleep(2)
+def interactuar_con_pagina(driver, url):
+    # Navegar a la nueva URL
+    driver.get(url)
+    app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar que la URL sea la correcta
+    driver.refresh()  # Forzar la recarga de la página
+
+    # Esperar a que el contenido clave esté presente en la página (por ejemplo, un párrafo <p>)
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "p")))
 
     # Ejemplo 1: Buscar un botón y hacer clic (suponiendo que el botón tiene el tag <button>)
     try:
@@ -58,11 +66,7 @@ def extraer_pagina():
         app.logger.info(f"Extrayendo contenido de la URL: {url}")
         
         driver = configurar_driver()
-        driver.get(url)
-        time.sleep(5)  # Esperar a que la página cargue completamente
-
-        # Interactuar con la página (clic en botones, seguir enlaces, etc.)
-        html_final = interactuar_con_pagina(driver)
+        html_final = interactuar_con_pagina(driver, url)  # Interactuar con la página
 
         # Extraer el contenido final de la página
         contenido = driver.find_elements(By.TAG_NAME, "p")
