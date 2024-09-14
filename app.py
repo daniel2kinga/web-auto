@@ -55,12 +55,13 @@ def extraer_pagina():
     try:
         data = request.json
         if not data or 'url' not in data or 'username' not in data or 'password' not in data:
+            app.logger.error(f"Datos recibidos incorrectos: {data}")
             return jsonify({"error": "No se proporcionaron los datos necesarios"}), 400
 
         url = data['url']
         username = data['username']
         password = data['password']
-        app.logger.info(f"Iniciando sesión en la URL: {url}")
+        app.logger.info(f"Iniciando sesión en la URL: {url} con usuario: {username}")
 
         driver = configurar_driver()
         html_final = login_y_clic_derecho(driver, url, username, password)
