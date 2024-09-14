@@ -53,6 +53,7 @@ def login_y_clic_derecho(driver, url, username, password):
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     try:
+        app.logger.info(f"Datos recibidos en la solicitud: {request.get_data()}")
         data = request.json
         if not data or 'url' not in data or 'username' not in data or 'password' not in data:
             app.logger.error(f"Datos recibidos incorrectos: {data}")
