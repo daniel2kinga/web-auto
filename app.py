@@ -54,10 +54,15 @@ def login_y_clic_derecho(driver, url, username, password):
 def extraer_pagina():
     try:
         # Mostrar los datos completos que están llegando al servidor
-        app.logger.info(f"Datos crudos de la solicitud: {request.data}")
-        app.logger.info(f"Encabezados de la solicitud: {request.headers}")
+        app.logger.info(f"Datos crudos de la solicitud: {request.data.decode('utf-8')}")
+        app.logger.info(f"Encabezados de la solicitud: {dict(request.headers)}")
         
-        data = request.json
+        # Verificación del Content-Type
+        if request.content_type != 'application/json':
+            app.logger.error("El encabezado Content-Type no es application/json")
+            return jsonify({"error": "Content-Type incorrecto. Se requiere application/json"}), 400
+        
+        data = request.get_json()  # Aseguramos que el JSON sea procesado correctamente
         app.logger.info(f"Datos procesados en formato JSON: {data}")
 
         if not data or 'url' not in data or 'username' not in data or 'password' not in data:
