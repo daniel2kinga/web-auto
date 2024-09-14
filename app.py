@@ -24,27 +24,31 @@ def configurar_driver():
     return driver
 
 def login_y_clic_derecho(driver, url, username, password):
-    # Navegar a la página de inicio de sesión
-    driver.get(url)
-    app.logger.info(f"Navegando a: {driver.current_url}")
+    try:
+        # Navegar a la página de inicio de sesión
+        driver.get(url)
+        app.logger.info(f"Navegando a: {driver.current_url}")
 
-    # Esperar que los campos de usuario y contraseña estén presentes
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
+        # Esperar que los campos de usuario y contraseña estén presentes
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
 
-    # Ingresar las credenciales
-    driver.find_element(By.NAME, "LoginControl$UserName").send_keys(username)
-    driver.find_element(By.NAME, "LoginControl$Password").send_keys(password)
+        # Ingresar las credenciales
+        driver.find_element(By.NAME, "LoginControl$UserName").send_keys(username)
+        driver.find_element(By.NAME, "LoginControl$Password").send_keys(password)
 
-    # Hacer clic en el botón de iniciar sesión
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "btn-login")))
-    driver.find_element(By.ID, "btn-login").click()
+        # Hacer clic en el botón de iniciar sesión
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "btn-login")))
+        driver.find_element(By.ID, "btn-login").click()
 
-    # Esperar a que la nueva página cargue completamente después del login
-    time.sleep(5)  # Esto puede ajustarse si la página tarda más en cargar
-
-    app.logger.info(f"Login exitoso: {driver.current_url}")
-    return driver.page_source
+        # Esperar a que la nueva página cargue completamente después del login
+        time.sleep(5)
+        app.logger.info(f"Login exitoso: {driver.current_url}")
+        return driver.page_source
+    
+    except Exception as e:
+        app.logger.error(f"Error durante el inicio de sesión: {str(e)}")
+        return None
 
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
@@ -61,8 +65,12 @@ def extraer_pagina():
         driver = configurar_driver()
         html_final = login_y_clic_derecho(driver, url, username, password)
 
-        driver.quit()
-        return jsonify({"url": url, "contenido": html_final})
+        if html_final:
+            driver.quit()
+            return jsonify({"url": url, "contenido": html_final})
+        else:
+            driver.quit()
+            return jsonify({"error": "Falló el inicio de sesión o la extracción de datos"}), 500
 
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
