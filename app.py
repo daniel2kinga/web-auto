@@ -29,7 +29,7 @@ def login_y_clic_derecho(driver, url, username, password):
         driver.get(url)
         app.logger.info(f"Navegando a: {driver.current_url}")
 
-        # Esperar que los campos de usuario y contraseña estén presentes y visibles
+        # Esperar que los campos de usuario y contraseña estén visibles y habilitados
         WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.NAME, "LoginControl$UserName")))
         WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.NAME, "LoginControl$Password")))
 
@@ -42,6 +42,7 @@ def login_y_clic_derecho(driver, url, username, password):
             contraseña_input.send_keys(password)
         else:
             app.logger.error("Los campos de usuario o contraseña no están habilitados")
+            return None
 
         # Esperar que el botón de iniciar sesión esté visible y habilitado
         iniciar_sesion_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "btn-login")))
@@ -53,7 +54,7 @@ def login_y_clic_derecho(driver, url, username, password):
         time.sleep(5)
         app.logger.info(f"Login exitoso: {driver.current_url}")
         return driver.page_source
-    
+
     except Exception as e:
         app.logger.error(f"Error durante el inicio de sesión: {str(e)}")
         return None
@@ -61,16 +62,16 @@ def login_y_clic_derecho(driver, url, username, password):
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     try:
-        # Mostrar los datos completos que están llegando al servidor
+        # Mostrar los datos crudos de la solicitud y los encabezados
         app.logger.info(f"Datos crudos de la solicitud: {request.data.decode('utf-8')}")
         app.logger.info(f"Encabezados de la solicitud: {dict(request.headers)}")
-        
-        # Verificación del Content-Type
-        if request.content_type != 'application/json':
-            app.logger.error("El encabezado Content-Type no es application/json")
-            return jsonify({"error": "Content-Type incorrecto. Se requiere application/json"}), 400
-        
-        data = request.get_json()  # Aseguramos que el JSON sea procesado correctamente
+
+        # Verificar que el Content-Type sea 'application/json'
+        if not request.is_json:
+            app.logger.error("El contenido de la solicitud no es JSON")
+            return jsonify({"error": "El contenido de la solicitud debe ser JSON"}), 400
+
+        data = request.get_json()
         app.logger.info(f"Datos procesados en formato JSON: {data}")
 
         if not data or 'url' not in data or 'username' not in data or 'password' not in data:
@@ -99,4 +100,6 @@ def extraer_pagina():
 # Configurar el servidor para usar el puerto proporcionado por Railway
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    # Configurar el nivel de log para mostrar información detallada
+    app.logger.setLevel('DEBUG')
     app.run(host='0.0.0.0', port=port)
