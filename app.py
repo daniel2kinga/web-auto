@@ -53,10 +53,15 @@ def login_y_clic_derecho(driver, url, username, password):
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     try:
-        app.logger.info(f"Datos recibidos en la solicitud: {request.get_data()}")
+        # Mostrar los datos completos que están llegando al servidor
+        app.logger.info(f"Datos crudos de la solicitud: {request.data}")
+        app.logger.info(f"Encabezados de la solicitud: {request.headers}")
+        
         data = request.json
+        app.logger.info(f"Datos procesados en formato JSON: {data}")
+
         if not data or 'url' not in data or 'username' not in data or 'password' not in data:
-            app.logger.error(f"Datos recibidos incorrectos: {data}")
+            app.logger.error(f"Datos recibidos incorrectos o incompletos: {data}")
             return jsonify({"error": "No se proporcionaron los datos necesarios"}), 400
 
         url = data['url']
