@@ -28,17 +28,17 @@ def login_y_clic_derecho(driver, url, username, password):
     driver.get(url)
     app.logger.info(f"Navegando a: {driver.current_url}")
 
-    # Esperar a que los campos de usuario y contraseña estén presentes
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username")))  # Asegúrate de que ID sea el correcto
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "password")))  # Asegúrate de que ID sea el correcto
+    # Esperar que los campos de usuario y contraseña estén presentes
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
 
     # Ingresar las credenciales
-    driver.find_element(By.ID, "username").send_keys(username)  # Cambia el ID si es necesario
-    driver.find_element(By.ID, "password").send_keys(password)  # Cambia el ID si es necesario
+    driver.find_element(By.NAME, "LoginControl$UserName").send_keys(username)
+    driver.find_element(By.NAME, "LoginControl$Password").send_keys(password)
 
     # Hacer clic en el botón de iniciar sesión
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//button[text()='Iniciar sesión']")))  # Cambia el XPATH si es necesario
-    driver.find_element(By.XPATH, "//button[text()='Iniciar sesión']").click()
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "btn-login")))
+    driver.find_element(By.ID, "btn-login").click()
 
     # Esperar a que la nueva página cargue completamente después del login
     time.sleep(5)  # Esto puede ajustarse si la página tarda más en cargar
@@ -63,26 +63,6 @@ def extraer_pagina():
 
         driver.quit()
         return jsonify({"url": url, "contenido": html_final})
-
-    except Exception as e:
-        app.logger.error(f"Error al procesar la solicitud: {e}")
-        return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
-
-# Configurar el servidor para usar el puerto proporcionado por Railway
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
-
-        driver = configurar_driver()
-        html_final = interactuar_con_pagina(driver, url)  # Interactuar con la página
-
-        # Extraer el contenido de la página actual
-        contenido = driver.find_elements(By.TAG_NAME, "p")
-        texto_extraido = " ".join([element.text for element in contenido])
-        app.logger.info(f"Texto extraído: {texto_extraido}")
-
-        driver.quit()
-        return jsonify({"url": url, "contenido": texto_extraido})
 
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
