@@ -29,17 +29,25 @@ def login_y_clic_derecho(driver, url, username, password):
         driver.get(url)
         app.logger.info(f"Navegando a: {driver.current_url}")
 
-        # Esperar que los campos de usuario y contraseña estén presentes
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
+        # Esperar que los campos de usuario y contraseña estén presentes y visibles
+        WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.NAME, "LoginControl$UserName")))
+        WebDriverWait(driver, 10).until(EC.visibility_of_element_located((By.NAME, "LoginControl$Password")))
 
         # Ingresar las credenciales
-        driver.find_element(By.NAME, "LoginControl$UserName").send_keys(username)
-        driver.find_element(By.NAME, "LoginControl$Password").send_keys(password)
+        usuario_input = driver.find_element(By.NAME, "LoginControl$UserName")
+        contraseña_input = driver.find_element(By.NAME, "LoginControl$Password")
+
+        if usuario_input.is_enabled() and contraseña_input.is_enabled():
+            usuario_input.send_keys(username)
+            contraseña_input.send_keys(password)
+        else:
+            app.logger.error("Los campos de usuario o contraseña no están habilitados")
+
+        # Esperar que el botón de iniciar sesión esté visible y habilitado
+        iniciar_sesion_btn = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "btn-login")))
 
         # Hacer clic en el botón de iniciar sesión
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "btn-login")))
-        driver.find_element(By.ID, "btn-login").click()
+        iniciar_sesion_btn.click()
 
         # Esperar a que la nueva página cargue completamente después del login
         time.sleep(5)
