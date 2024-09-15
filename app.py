@@ -29,18 +29,21 @@ def login_y_clic_derecho(driver, url, username, password):
         driver.get(url)
         
         # Esperar hasta que se cargue el campo de email
-        wait = WebDriverWait(driver, 20)
-        campo_usuario = wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
+        wait = WebDriverWait(driver, 30)  # Aumentado a 30 segundos
+        campo_usuario = wait.until(EC.visibility_of_element_located((By.NAME, "LoginControl$UserName")))
         campo_usuario.send_keys(username)
 
         # Esperar hasta que se cargue el campo de contraseña
-        campo_password = wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
+        campo_password = wait.until(EC.visibility_of_element_located((By.NAME, "LoginControl$Password")))
         campo_password.send_keys(password)
 
-        # Esperar hasta que el botón "Iniciar sesión" esté interactuable
+        # Asegurarse de que el botón de inicio de sesión esté visible y hacer scroll hacia él
         boton_iniciar = wait.until(EC.element_to_be_clickable((By.ID, "btn-login")))
+        driver.execute_script("arguments[0].scrollIntoView(true);", boton_iniciar)
+        
+        # Verificar si es necesario hacer foco en el botón antes de hacer clic
         boton_iniciar.click()
-
+        
         # Verificar si la sesión se ha iniciado correctamente
         if verificar_sesion_iniciada(driver):
             app.logger.info("Sesión iniciada correctamente.")
