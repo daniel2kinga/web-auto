@@ -25,6 +25,8 @@ def configurar_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
+
+    # Opciones para evitar la detección de automatización
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
@@ -38,40 +40,47 @@ def configurar_driver():
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
+
+    # Ejecuta script para evitar detección de Selenium
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
 
 def login_y_clic_derecho(driver, url, username, password):
     try:
-        # Navegar a la página principal o de inicio de sesión
+        # Navegar a la página de inicio de sesión
         driver.get(url)
         app.logger.info(f"Navegando a: {driver.current_url}")
 
-        wait = WebDriverWait(driver, 20)
+        wait = WebDriverWait(driver, 30)  # Aumentado a 30 segundos
+
+        # Tomar captura de pantalla antes de iniciar sesión
+        driver.save_screenshot('antes_login.png')
 
         # Verificar si la sesión ya está iniciada
         if verificar_sesion_iniciada(driver):
             app.logger.info("La sesión ya está iniciada.")
-            # Continuar con las acciones posteriores si es necesario
             return driver.page_source
         else:
             app.logger.info("La sesión no está iniciada. Procediendo a iniciar sesión.")
 
-            # Proceder con el inicio de sesión
-            # Esperar que los campos de usuario y contraseña estén presentes
-            wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
-            wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
+            # Esperar que los campos de usuario y contraseña estén presentes y visibles
+            usuario_input = wait.until(
+                EC.element_to_be_clickable((By.NAME, "LoginControl$UserName"))
+            )
+            contraseña_input = wait.until(
+                EC.element_to_be_clickable((By.NAME, "LoginControl$Password"))
+            )
 
             # Ingresar las credenciales
-            usuario_input = driver.find_element(By.NAME, "LoginControl$UserName")
-            contraseña_input = driver.find_element(By.NAME, "LoginControl$Password")
-
             usuario_input.clear()
             usuario_input.send_keys(username)
             contraseña_input.clear()
             contraseña_input.send_keys(password)
 
             # Hacer clic en el botón de iniciar sesión inmediatamente después de ingresar las credenciales
-            iniciar_sesion_btn = driver.find_element(By.ID, "btn-login")
+            iniciar_sesion_btn = wait.until(
+                EC.element_to_be_clickable((By.ID, "btn-login"))
+            )
 
             if iniciar_sesion_btn.is_enabled() and iniciar_sesion_btn.is_displayed():
                 iniciar_sesion_btn.click()
@@ -80,31 +89,40 @@ def login_y_clic_derecho(driver, url, username, password):
                 app.logger.error("El botón de iniciar sesión no está habilitado o visible.")
                 return None
 
-            # Esperar a que la URL cambie, indicando que se ha iniciado sesión
-            wait.until(EC.url_changes(url))
+            # Esperar a que la URL cambie o a que aparezca un elemento único después del inicio de sesión
+            wait.until(lambda driver: driver.current_url != url or verificar_sesion_iniciada(driver))
             app.logger.info(f"URL después de iniciar sesión: {driver.current_url}")
+
+            # Tomar captura de pantalla después de intentar iniciar sesión
+            driver.save_screenshot('despues_login.png')
 
             # Verificar si el inicio de sesión fue exitoso
             if verificar_sesion_iniciada(driver):
                 app.logger.info("Inicio de sesión exitoso.")
                 return driver.page_source
             else:
-                app.logger.error("El inicio de sesión no fue exitoso.")
+                # Buscar posibles mensajes de error en la página
+                try:
+                    mensaje_error = driver.find_element(By.CLASS_NAME, "login-error")
+                    app.logger.error(f"Mensaje de error en el inicio de sesión: {mensaje_error.text}")
+                except NoSuchElementException:
+                    app.logger.error("El inicio de sesión no fue exitoso, pero no se encontró un mensaje de error.")
                 return None
 
     except Exception as e:
         app.logger.error(f"Error durante el inicio de sesión: {str(e)}")
         app.logger.error(traceback.format_exc())
+
+        # Tomar captura de pantalla en caso de excepción
+        driver.save_screenshot('error_login.png')
         return None
 
 def verificar_sesion_iniciada(driver):
     try:
-        # Aquí, verificamos si hay elementos que solo aparecen cuando el usuario está autenticado
-        # Por ejemplo, un elemento del menú, un botón de cierre de sesión, etc.
-        # Reemplaza 'elemento_unico' con un selector adecuado para tu caso
         wait = WebDriverWait(driver, 10)
+        # Reemplaza 'elemento_unico_post_login' con un selector que solo exista después de iniciar sesión
         elemento_autenticado = wait.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "a[title='Cerrar sesión']"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div.dashboard"))
         )
         return True
     except TimeoutException:
@@ -137,11 +155,11 @@ def extraer_pagina():
         driver = configurar_driver()
         html_final = login_y_clic_derecho(driver, url, username, password)
 
+        driver.quit()
+
         if html_final:
-            driver.quit()
             return jsonify({"url": url, "contenido": html_final})
         else:
-            driver.quit()
             return jsonify({"error": "Falló el inicio de sesión o la extracción de datos"}), 500
 
     except Exception as e:
