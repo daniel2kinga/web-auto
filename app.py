@@ -29,25 +29,42 @@ def iniciar_sesion(driver, url, username, password):
     driver.get(url)
     app.logger.info(f"Navegando a: {driver.current_url}")
 
-    # Esperar que los campos de usuario, contraseña y botón de inicio de sesión sean visibles
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
-    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "btn-login")))
+    try:
+        # Esperar que los campos de usuario y contraseña sean visibles
+        WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.NAME, "LoginControl$UserName")))
+        WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.NAME, "LoginControl$Password")))
+        WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.ID, "btn-login")))
 
-    # Ingresar el nombre de usuario y la contraseña
-    driver.find_element(By.NAME, "LoginControl$UserName").send_keys(username)
-    driver.find_element(By.NAME, "LoginControl$Password").send_keys(password)
-    
-    # Hacer clic en el botón de iniciar sesión
-    driver.find_element(By.ID, "btn-login").click()
+        # Ingresar el nombre de usuario y la contraseña
+        usuario_input = driver.find_element(By.NAME, "LoginControl$UserName")
+        password_input = driver.find_element(By.NAME, "LoginControl$Password")
+        boton_iniciar = driver.find_element(By.ID, "btn-login")
 
-    # Esperar que la sesión se haya iniciado, verificar con un elemento que solo aparece después de iniciar sesión
-    WebDriverWait(driver, 10).until(EC.url_changes(url))
-    app.logger.info("Inicio de sesión exitoso.")
+        usuario_input.clear()
+        usuario_input.send_keys(username)
+        app.logger.info("Usuario ingresado correctamente.")
 
-    # Retornar el contenido HTML de la página después del inicio de sesión
-    html_final = driver.page_source
-    return html_final
+        password_input.clear()
+        password_input.send_keys(password)
+        app.logger.info("Contraseña ingresada correctamente.")
+
+        time.sleep(2)  # Pausa breve para asegurar que los datos se ingresen correctamente
+
+        # Hacer clic en el botón de iniciar sesión
+        boton_iniciar.click()
+        app.logger.info("Botón de iniciar sesión clickeado.")
+
+        # Esperar que la página cambie después de iniciar sesión
+        WebDriverWait(driver, 15).until(EC.url_changes(url))
+        app.logger.info("Inicio de sesión exitoso.")
+
+        # Retornar el contenido HTML de la página después del inicio de sesión
+        html_final = driver.page_source
+        return html_final
+
+    except Exception as e:
+        app.logger.error(f"Error durante el inicio de sesión: {e}")
+        raise e
 
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
@@ -68,7 +85,7 @@ def extraer_pagina():
         return jsonify({"url": url, "contenido_html": html_final[:1000]})  # Retornar solo los primeros 1000 caracteres del HTML
 
     except Exception as e:
-        app.logger.error(f"Error durante el inicio de sesión: {e}")
+        app.logger.error(f"Error al procesar la solicitud: {e}")
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
 
 # Configurar el servidor para usar el puerto proporcionado por Railway
