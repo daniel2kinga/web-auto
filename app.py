@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -21,6 +21,9 @@ def configurar_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
 
     # Agrega el User-Agent para simular un navegador real
     chrome_options.add_argument(
@@ -41,40 +44,36 @@ def login_y_clic_derecho(driver, url, username, password):
 
         wait = WebDriverWait(driver, 20)
 
-        # Esperar que los campos de usuario y contraseña estén presentes y visibles
-        usuario_input = wait.until(
-            EC.visibility_of_element_located((By.NAME, "LoginControl$UserName"))
-        )
-        contraseña_input = wait.until(
-            EC.visibility_of_element_located((By.NAME, "LoginControl$Password"))
-        )
+        # Esperar que los campos de usuario y contraseña estén presentes
+        wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
+        wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
 
         # Ingresar las credenciales
-        if usuario_input.is_enabled() and contraseña_input.is_enabled():
-            usuario_input.clear()
-            usuario_input.send_keys(username)
-            contraseña_input.clear()
-            contraseña_input.send_keys(password)
+        usuario_input = driver.find_element(By.NAME, "LoginControl$UserName")
+        contraseña_input = driver.find_element(By.NAME, "LoginControl$Password")
+
+        usuario_input.clear()
+        usuario_input.send_keys(username)
+        contraseña_input.clear()
+        contraseña_input.send_keys(password)
+
+        # Hacer clic en el botón de iniciar sesión inmediatamente después de ingresar las credenciales
+        iniciar_sesion_btn = driver.find_element(By.ID, "btn-login")
+
+        if iniciar_sesion_btn.is_enabled() and iniciar_sesion_btn.is_displayed():
+            iniciar_sesion_btn.click()
+            app.logger.info("Botón de iniciar sesión clicado inmediatamente después de ingresar las credenciales")
         else:
-            app.logger.error("Los campos de usuario o contraseña no están habilitados")
+            app.logger.error("El botón de iniciar sesión no está habilitado o visible")
             return None
 
-        # Esperar que el botón de iniciar sesión esté visible y habilitado
-        iniciar_sesion_btn = wait.until(
-            EC.element_to_be_clickable((By.ID, "btn-login"))
-        )
-
-        # Hacer clic en el botón de iniciar sesión
-        iniciar_sesion_btn.click()
-        app.logger.info("Botón de iniciar sesión clicado")
-
-        # Esperar a que la nueva página cargue completamente después del login
-        time.sleep(5)
+        # Esperar a que la URL cambie, indicando que se ha iniciado sesión
+        wait.until(EC.url_changes(url))
+        app.logger.info(f"URL después de iniciar sesión: {driver.current_url}")
 
         # Verificar si el inicio de sesión fue exitoso
-        # Puedes ajustar esta parte según la página que se carga después del inicio de sesión
         if "dashboard" in driver.current_url or "home" in driver.current_url:
-            app.logger.info(f"Login exitoso: {driver.current_url}")
+            app.logger.info("Login exitoso")
             return driver.page_source
         else:
             app.logger.error("El inicio de sesión no fue exitoso")
@@ -120,7 +119,7 @@ def extraer_pagina():
             return jsonify({"error": "Falló el inicio de sesión o la extracción de datos"}), 500
 
     except Exception as e:
-        app.logger.error(f"Error al procesar la solicitud: {str(e)}")
+        app.logger.error(f"Error al procesar la solicitud: {e}")
         app.logger.error(traceback.format_exc())
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
 
