@@ -27,31 +27,36 @@ def configurar_driver():
 
 # Función para iniciar sesión y hacer clic en el botón derecho
 def login_y_clic_derecho(driver, url, username, password):
-    driver.get(url)
-
-    # Esperar a que el campo de usuario esté presente
     try:
+        app.logger.info(f"Accediendo a la URL: {url}")
+        driver.get(url)
+
+        # Esperar a que el campo de usuario esté presente
         WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
 
         # Ingresar el nombre de usuario
         user_input = driver.find_element(By.NAME, "LoginControl$UserName")
         user_input.clear()
         user_input.send_keys(username)
+        app.logger.info(f"Usuario ingresado: {username}")
 
         # Ingresar la contraseña
         password_input = driver.find_element(By.NAME, "LoginControl$Password")
         password_input.clear()
         password_input.send_keys(password)
+        app.logger.info("Contraseña ingresada")
 
         # Hacer clic en el botón "Iniciar sesión"
         boton_iniciar = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "btn-login")))
         boton_iniciar.click()
+        app.logger.info("Botón 'Iniciar sesión' clickeado")
 
         # Comprobar si el inicio de sesión fue exitoso
         if verificar_sesion_iniciada(driver):
+            app.logger.info("Inicio de sesión exitoso")
             return driver.page_source
         else:
-            raise Exception("Error durante el inicio de sesión")
+            raise Exception("Inicio de sesión fallido")
     except Exception as e:
         app.logger.error(f"Error durante el inicio de sesión: {e}")
         return None
@@ -60,9 +65,11 @@ def login_y_clic_derecho(driver, url, username, password):
 def verificar_sesion_iniciada(driver):
     try:
         # Aquí puedes ajustar el selector para un elemento específico que solo aparece cuando la sesión está iniciada
+        app.logger.info("Verificando si la sesión está iniciada...")
         WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.XPATH, "//elemento_que_confirma_sesion_iniciada")))
         return True
-    except:
+    except Exception as e:
+        app.logger.error(f"Error verificando sesión: {e}")
         return False
 
 # Ruta principal para manejar la solicitud HTTP
