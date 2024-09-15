@@ -25,21 +25,17 @@ def configurar_driver():
     return driver
 
 def iniciar_sesion(driver, url, username, password):
-    # Navegar a la página de inicio de sesión
-    driver.get(url)
-    app.logger.info(f"Navegando a: {driver.current_url}")
-
     try:
+        # Navegar a la página de inicio de sesión
+        driver.get(url)
+        app.logger.info(f"Navegando a: {driver.current_url}")
+
         # Esperar que los campos de usuario y contraseña sean visibles
-        WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.NAME, "LoginControl$UserName")))
-        WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.NAME, "LoginControl$Password")))
-        WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.ID, "btn-login")))
+        usuario_input = WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.NAME, "LoginControl$UserName")))
+        password_input = WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.NAME, "LoginControl$Password")))
+        boton_iniciar = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.ID, "btn-login")))
 
         # Ingresar el nombre de usuario y la contraseña
-        usuario_input = driver.find_element(By.NAME, "LoginControl$UserName")
-        password_input = driver.find_element(By.NAME, "LoginControl$Password")
-        boton_iniciar = driver.find_element(By.ID, "btn-login")
-
         usuario_input.clear()
         usuario_input.send_keys(username)
         app.logger.info("Usuario ingresado correctamente.")
@@ -71,6 +67,7 @@ def extraer_pagina():
     try:
         data = request.json
         if not data or 'url' not in data or 'username' not in data or 'password' not in data:
+            app.logger.error("Datos incompletos proporcionados")
             return jsonify({"error": "Datos incompletos"}), 400
 
         url = data['url']
@@ -82,6 +79,7 @@ def extraer_pagina():
         html_final = iniciar_sesion(driver, url, username, password)
 
         driver.quit()
+        app.logger.info("Solicitud procesada exitosamente")
         return jsonify({"url": url, "contenido_html": html_final[:1000]})  # Retornar solo los primeros 1000 caracteres del HTML
 
     except Exception as e:
