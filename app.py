@@ -19,19 +19,29 @@ app = Flask(__name__)
 
 def configurar_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Ejecuta en modo headless (sin interfaz gráfica)
+    chrome_options.add_argument("--headless")  # Ejecuta en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
 
+    # Opciones para reducir el uso de recursos
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--disable-infobars")
+    chrome_options.add_argument("--disable-plugins")
+    chrome_options.add_argument("--no-zygote")
+    chrome_options.add_argument("--single-process")
+
+    prefs = {"profile.managed_default_content_settings.images": 2}
+    chrome_options.add_experimental_option("prefs", prefs)
+
     # Opciones para evitar la detección de automatización
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
 
-    # Agrega el User-Agent para simular un navegador real
+    # Agrega el User-Agent
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -41,7 +51,7 @@ def configurar_driver():
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
 
-    # Ejecuta script para evitar detección de Selenium
+    # Evitar detección de Selenium
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
 
@@ -51,10 +61,7 @@ def login_y_clic_derecho(driver, url, username, password):
         driver.get(url)
         app.logger.info(f"Navegando a: {driver.current_url}")
 
-        wait = WebDriverWait(driver, 30)  # Aumentado a 30 segundos
-
-        # Tomar captura de pantalla antes de iniciar sesión
-        driver.save_screenshot('antes_login.png')
+        wait = WebDriverWait(driver, 30)
 
         # Verificar si la sesión ya está iniciada
         if verificar_sesion_iniciada(driver):
@@ -63,7 +70,7 @@ def login_y_clic_derecho(driver, url, username, password):
         else:
             app.logger.info("La sesión no está iniciada. Procediendo a iniciar sesión.")
 
-            # Esperar que los campos de usuario y contraseña estén presentes y visibles
+            # Esperar que los campos estén interactuables
             usuario_input = wait.until(
                 EC.element_to_be_clickable((By.NAME, "LoginControl$UserName"))
             )
@@ -77,7 +84,7 @@ def login_y_clic_derecho(driver, url, username, password):
             contraseña_input.clear()
             contraseña_input.send_keys(password)
 
-            # Hacer clic en el botón de iniciar sesión inmediatamente después de ingresar las credenciales
+            # Clic en el botón de iniciar sesión
             iniciar_sesion_btn = wait.until(
                 EC.element_to_be_clickable((By.ID, "btn-login"))
             )
@@ -89,19 +96,16 @@ def login_y_clic_derecho(driver, url, username, password):
                 app.logger.error("El botón de iniciar sesión no está habilitado o visible.")
                 return None
 
-            # Esperar a que la URL cambie o a que aparezca un elemento único después del inicio de sesión
+            # Esperar a que la URL cambie o aparezca un elemento después del inicio de sesión
             wait.until(lambda driver: driver.current_url != url or verificar_sesion_iniciada(driver))
             app.logger.info(f"URL después de iniciar sesión: {driver.current_url}")
-
-            # Tomar captura de pantalla después de intentar iniciar sesión
-            driver.save_screenshot('despues_login.png')
 
             # Verificar si el inicio de sesión fue exitoso
             if verificar_sesion_iniciada(driver):
                 app.logger.info("Inicio de sesión exitoso.")
                 return driver.page_source
             else:
-                # Buscar posibles mensajes de error en la página
+                # Buscar mensajes de error
                 try:
                     mensaje_error = driver.find_element(By.CLASS_NAME, "login-error")
                     app.logger.error(f"Mensaje de error en el inicio de sesión: {mensaje_error.text}")
@@ -112,15 +116,15 @@ def login_y_clic_derecho(driver, url, username, password):
     except Exception as e:
         app.logger.error(f"Error durante el inicio de sesión: {str(e)}")
         app.logger.error(traceback.format_exc())
-
-        # Tomar captura de pantalla en caso de excepción
-        driver.save_screenshot('error_login.png')
         return None
+
+    finally:
+        driver.quit()  # Asegura que el driver se cierra y libera recursos
 
 def verificar_sesion_iniciada(driver):
     try:
         wait = WebDriverWait(driver, 10)
-        # Reemplaza 'elemento_unico_post_login' con un selector que solo exista después de iniciar sesión
+        # Reemplaza con un selector que solo exista después de iniciar sesión
         elemento_autenticado = wait.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.dashboard"))
         )
@@ -152,10 +156,18 @@ def extraer_pagina():
         password = data['password']
         app.logger.info(f"Iniciando sesión en la URL: {url} con usuario: {username}")
 
-        driver = configurar_driver()
-        html_final = login_y_clic_derecho(driver, url, username, password)
+        # Monitorear uso de memoria
+        import psutil
+        process = psutil.Process(os.getpid())
+        memory_info_before = process.memory_info().rss / 1024 ** 2
+        app.logger.info(f"Uso de memoria antes de iniciar Selenium: {memory_info_before} MB")
 
-        driver.quit()
+        driver = configurar_driver()
+
+        memory_info_after = process.memory_info().rss / 1024 ** 2
+        app.logger.info(f"Uso de memoria después de iniciar Selenium: {memory_info_after} MB")
+
+        html_final = login_y_clic_derecho(driver, url, username, password)
 
         if html_final:
             return jsonify({"url": url, "contenido": html_final})
