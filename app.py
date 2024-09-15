@@ -18,7 +18,7 @@ def configurar_driver():
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
-    chrome_options.add_argument("--disable-cache")  # Desactivar caché
+    chrome_options.add_argument("--disable-cache")  # Desactivar el caché del navegador
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -27,17 +27,33 @@ def configurar_driver():
 def interactuar_con_pagina(driver, url):
     # Navegar a la nueva URL
     driver.get(url)
-    app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar la URL actual
+    app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar que la URL sea la correcta
     driver.refresh()  # Forzar la recarga de la página
 
-    # Esperar a que un elemento clave esté presente en la página (por ejemplo, un párrafo <p>)
+    # Esperar a que el contenido clave esté presente en la página (por ejemplo, un párrafo <p>)
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "p")))
 
-    # Obtener y devolver el contenido HTML completo de la página para verificar
-    html_final = driver.page_source
-    app.logger.info(f"Contenido HTML después de la navegación:\n{html_final[:1000]}...")  # Mostrar solo los primeros 1000 caracteres del HTML
+    # Ejemplo 1: Buscar un botón y hacer clic (suponiendo que el botón tiene el tag <button>)
+    try:
+        boton = driver.find_element(By.TAG_NAME, "button")
+        boton.click()  # Hacer clic en el botón
+        time.sleep(2)  # Esperar después de hacer clic
+    except:
+        app.logger.info("No se encontró ningún botón en la página")
 
-    return html_final
+    # Ejemplo 2: Buscar un enlace (<a>) y seguir el enlace
+    try:
+        enlaces = driver.find_elements(By.TAG_NAME, "a")
+        for enlace in enlaces:
+            href = enlace.get_attribute("href")
+            if href:
+                app.logger.info(f"Siguiendo el enlace: {href}")
+                driver.get(href)  # Navegar a la URL del enlace
+                time.sleep(2)  # Esperar después de navegar
+    except:
+        app.logger.info("No se encontraron enlaces en la página")
+    
+    return driver.page_source  # Devolver el HTML final de la página
 
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
@@ -52,10 +68,9 @@ def extraer_pagina():
         driver = configurar_driver()
         html_final = interactuar_con_pagina(driver, url)  # Interactuar con la página
 
-        # Extraer el contenido de la página actual
+        # Extraer el contenido final de la página
         contenido = driver.find_elements(By.TAG_NAME, "p")
         texto_extraido = " ".join([element.text for element in contenido])
-        app.logger.info(f"Texto extraído: {texto_extraido}")
 
         driver.quit()
         return jsonify({"url": url, "contenido": texto_extraido})
