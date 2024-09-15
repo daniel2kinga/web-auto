@@ -34,8 +34,7 @@ def iniciar_sesion(driver, url, username, password):
         # Esperar que los campos de usuario y contraseña sean visibles
         usuario_input = WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.NAME, "LoginControl$UserName")))
         password_input = WebDriverWait(driver, 15).until(EC.visibility_of_element_located((By.NAME, "LoginControl$Password")))
-        boton_iniciar = WebDriverWait(driver, 15).until(EC.element_to_be_clickable((By.ID, "btn-login")))
-
+        
         # Ingresar el nombre de usuario y la contraseña
         usuario_input.clear()
         usuario_input.send_keys(username)
@@ -45,14 +44,20 @@ def iniciar_sesion(driver, url, username, password):
         password_input.send_keys(password)
         app.logger.info("Contraseña ingresada correctamente.")
 
-        time.sleep(2)  # Pausa breve para asegurar que los datos se ingresen correctamente
+        # Aumentar el tiempo de espera antes de intentar hacer clic en el botón
+        time.sleep(3)  # Pausa breve para asegurar que los datos se ingresen correctamente
 
-        # Hacer clic en el botón de iniciar sesión
+        # Comprobar si el botón está visible antes de hacer clic
+        boton_iniciar = WebDriverWait(driver, 20).until(EC.visibility_of_element_located((By.ID, "btn-login")))
+        app.logger.info("Botón 'Iniciar sesión' es visible.")
+
+        # Comprobar si el botón es clickeable
+        boton_iniciar = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "btn-login")))
         boton_iniciar.click()
         app.logger.info("Botón de iniciar sesión clickeado.")
 
         # Esperar que la página cambie después de iniciar sesión
-        WebDriverWait(driver, 15).until(EC.url_changes(url))
+        WebDriverWait(driver, 20).until(EC.url_changes(url))
         app.logger.info("Inicio de sesión exitoso.")
 
         # Retornar el contenido HTML de la página después del inicio de sesión
