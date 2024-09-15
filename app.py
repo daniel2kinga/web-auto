@@ -1,46 +1,3 @@
-Skip to content
-Navigation Menu
-daniel2kinga
-/
-web-auto
-
-Type / to search
-Code
-Issues
-Pull requests
-Actions
-Projects
-Wiki
-Security
-Insights
-Settings
-Files
-Go to file
-t
-Dockerfile
-Procfile
-app.py
-install_chrome.sh
-requirements.txt
-Breadcrumbsweb-auto
-/app.py
-Latest commit
-daniel2kinga
-daniel2kinga
-Update app.py
-6d7f6a4
- · 
-3 days ago
-History
-Breadcrumbsweb-auto
-/app.py
-File metadata and controls
-
-Code
-
-Blame
-70 lines (56 loc) · 2.86 KB
-def configurar_driver():
 import os
 import time
 from flask import Flask, request, jsonify
@@ -111,16 +68,3 @@ def extraer_pagina():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
-Symbols
-Find definitions and references for functions and other symbols in this file by clicking a symbol below or in the code.
-Filter symbols
-r
-const
-app
-func
-configurar_driver
-func
-interactuar_con_pagina
-func
-extraer_pagina
-web-auto/app.py at main · daniel2kinga/web-auto 
