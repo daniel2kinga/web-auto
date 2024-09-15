@@ -1,5 +1,6 @@
 import os
 import time
+import traceback
 from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -60,6 +61,9 @@ def iniciar_sesion(driver, url, username, password):
 
     except Exception as e:
         app.logger.error(f"Error durante el inicio de sesión: {e}")
+        app.logger.error(f"Stack trace:\n{traceback.format_exc()}")
+        # Si hay error, capturar el estado actual de la página y mostrarlo en el log
+        app.logger.info(f"Estado actual de la página:\n{driver.page_source[:1000]}...")  # Solo mostrar los primeros 1000 caracteres
         raise e
 
 @app.route('/extraer', methods=['POST'])
@@ -84,6 +88,7 @@ def extraer_pagina():
 
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
+        app.logger.error(f"Detalles del error: {traceback.format_exc()}")  # Mostrar el stack trace completo
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
 
 # Configurar el servidor para usar el puerto proporcionado por Railway
