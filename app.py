@@ -79,12 +79,12 @@ def extraer_pagina():
         data = request.get_json()
         app.logger.info(f"Datos procesados en formato JSON: {data}")
 
-        if not data or 'url' not in data or 'username' not in data or 'password' not in data:
+        if not data or 'url' not in data or 'email' not in data or 'password' not in data:
             app.logger.error(f"Datos recibidos incorrectos o incompletos: {data}")
             return jsonify({"error": "No se proporcionaron los datos necesarios"}), 400
 
         url = data['url']
-        username = data['username']
+        username = data['email']
         password = data['password']
         app.logger.info(f"Iniciando sesión en la URL: {url} con usuario: {username}")
 
