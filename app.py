@@ -30,7 +30,7 @@ def configurar_driver():
 # Verificar si la sesión ya está iniciada
 def verificar_sesion_iniciada(driver):
     try:
-        wait = WebDriverWait(driver, 15)
+        wait = WebDriverWait(driver, 10)
         elemento_autenticado = wait.until(EC.presence_of_element_located((By.ID, "logoutButton")))  # Cambia el ID según el elemento que indique una sesión iniciada
         return True if elemento_autenticado else False
     except:
@@ -45,7 +45,7 @@ def capturar_pantalla(driver, nombre_archivo):
 # Iniciar sesión y realizar clic derecho en un elemento
 def login_y_clic_derecho(driver, url, username, password):
     driver.get(url)
-    time.sleep(3)  # Esperar a que la página cargue
+    time.sleep(2)  # Esperar a que la página cargue
 
     # Verificar si la sesión ya está iniciada
     if verificar_sesion_iniciada(driver):
@@ -54,7 +54,7 @@ def login_y_clic_derecho(driver, url, username, password):
 
     try:
         # Ingresar nombre de usuario
-        input_usuario = WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
+        input_usuario = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
         input_usuario.clear()
         input_usuario.send_keys(username)
 
@@ -64,7 +64,7 @@ def login_y_clic_derecho(driver, url, username, password):
         input_contrasena.send_keys(password)
 
         # Esperar a que el botón sea interactuable
-        boton_iniciar = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "btn-login")))
+        boton_iniciar = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "btn-login")))
 
         # Hacer clic en el botón de "Iniciar sesión"
         try:
@@ -77,7 +77,7 @@ def login_y_clic_derecho(driver, url, username, password):
             app.logger.info("Clic en el botón de iniciar sesión usando JavaScript.")
 
         # Esperar a que la página cargue después del inicio de sesión
-        WebDriverWait(driver, 20).until(EC.url_changes(url))
+        WebDriverWait(driver, 15).until(EC.url_changes(url))
 
         # Verificar si el inicio de sesión fue exitoso
         if not verificar_sesion_iniciada(driver):
@@ -103,6 +103,10 @@ def login_y_clic_derecho(driver, url, username, password):
         app.logger.error(traceback.format_exc())
         capturar_pantalla(driver, "error_general")
         return None
+
+    finally:
+        # Asegurarse de cerrar el driver para liberar memoria
+        driver.quit()
 
 # Ruta para extraer el contenido de la página
 @app.route('/extraer', methods=['POST'])
@@ -130,7 +134,6 @@ def extraer_pagina():
         contenido = driver.find_elements(By.TAG_NAME, "p")
         texto_extraido = " ".join([element.text for element in contenido])
 
-        driver.quit()
         return jsonify({"url": url, "contenido": texto_extraido})
 
     except Exception as e:
