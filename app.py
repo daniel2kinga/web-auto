@@ -11,71 +11,73 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
 
+# Configuración del driver de Selenium
 def configurar_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--remote-debugging-port=9222")
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)")
+    chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
+# Función para iniciar sesión y hacer clic en el botón derecho
 def login_y_clic_derecho(driver, url, username, password):
+    driver.get(url)
+
+    # Esperar a que el campo de usuario esté presente
     try:
-        driver.get(url)
-        
-        # Esperar hasta que se cargue el campo de email
-        wait = WebDriverWait(driver, 30)  # Aumentado a 30 segundos
-        campo_usuario = wait.until(EC.visibility_of_element_located((By.NAME, "LoginControl$UserName")))
-        campo_usuario.send_keys(username)
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
 
-        # Esperar hasta que se cargue el campo de contraseña
-        campo_password = wait.until(EC.visibility_of_element_located((By.NAME, "LoginControl$Password")))
-        campo_password.send_keys(password)
+        # Ingresar el nombre de usuario
+        user_input = driver.find_element(By.NAME, "LoginControl$UserName")
+        user_input.clear()
+        user_input.send_keys(username)
 
-        # Asegurarse de que el botón de inicio de sesión esté visible y hacer scroll hacia él
-        boton_iniciar = wait.until(EC.element_to_be_clickable((By.ID, "btn-login")))
-        driver.execute_script("arguments[0].scrollIntoView(true);", boton_iniciar)
-        
-        # Verificar si es necesario hacer foco en el botón antes de hacer clic
+        # Ingresar la contraseña
+        password_input = driver.find_element(By.NAME, "LoginControl$Password")
+        password_input.clear()
+        password_input.send_keys(password)
+
+        # Hacer clic en el botón "Iniciar sesión"
+        boton_iniciar = WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.ID, "btn-login")))
         boton_iniciar.click()
-        
-        # Verificar si la sesión se ha iniciado correctamente
+
+        # Comprobar si el inicio de sesión fue exitoso
         if verificar_sesion_iniciada(driver):
-            app.logger.info("Sesión iniciada correctamente.")
             return driver.page_source
         else:
-            app.logger.error("El inicio de sesión no fue exitoso.")
-            return None
+            raise Exception("Error durante el inicio de sesión")
     except Exception as e:
         app.logger.error(f"Error durante el inicio de sesión: {e}")
         return None
 
+# Verificar si la sesión ya está iniciada
 def verificar_sesion_iniciada(driver):
     try:
-        # Verificar si un elemento presente después de iniciar sesión está disponible
-        wait = WebDriverWait(driver, 20)
-        elemento_autenticado = wait.until(
-            EC.presence_of_element_located((By.XPATH, "//span[contains(text(), 'Dashboard')]"))  # Ejemplo de un elemento posterior al login
-        )
+        # Aquí puedes ajustar el selector para un elemento específico que solo aparece cuando la sesión está iniciada
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.XPATH, "//elemento_que_confirma_sesion_iniciada")))
         return True
     except:
         return False
 
+# Ruta principal para manejar la solicitud HTTP
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     try:
         data = request.json
         if not data or 'url' not in data or 'username' not in data or 'password' not in data:
-            return jsonify({"error": "No se proporcionó URL, usuario o contraseña"}), 400
+            return jsonify({"error": "No se proporcionaron todos los parámetros necesarios"}), 400
 
         url = data['url']
         username = data['username']
         password = data['password']
+
+        app.logger.info(f"Extrayendo contenido de la URL: {url}")
 
         driver = configurar_driver()
         html_final = login_y_clic_derecho(driver, url, username, password)
@@ -85,7 +87,7 @@ def extraer_pagina():
             return jsonify({"url": url, "contenido": html_final})
         else:
             driver.quit()
-            return jsonify({"error": "Fallo en el inicio de sesión"}), 500
+            return jsonify({"error": "Error durante el inicio de sesión"}), 500
 
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
