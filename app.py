@@ -9,6 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.common.exceptions import ElementNotInteractableException, TimeoutException
 
 app = Flask(__name__)
 
@@ -56,9 +57,18 @@ def login_y_clic_derecho(driver, url, username, password):
         input_contrasena.clear()
         input_contrasena.send_keys(password)
 
+        # Esperar a que el botón sea interactuable
+        boton_iniciar = WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "btn-login")))
+
         # Hacer clic en el botón de "Iniciar sesión"
-        boton_iniciar = driver.find_element(By.ID, "btn-login")
-        boton_iniciar.click()
+        try:
+            boton_iniciar.click()
+            app.logger.info("Clic en el botón de iniciar sesión.")
+        except ElementNotInteractableException as e:
+            app.logger.error(f"Error al hacer clic en el botón de iniciar sesión: {e}")
+            # Intentar hacer clic usando JavaScript como respaldo
+            driver.execute_script("arguments[0].click();", boton_iniciar)
+            app.logger.info("Clic en el botón de iniciar sesión usando JavaScript.")
 
         # Esperar a que la página cargue después del inicio de sesión
         WebDriverWait(driver, 10).until(EC.url_changes(url))
@@ -70,6 +80,10 @@ def login_y_clic_derecho(driver, url, username, password):
 
         app.logger.info("Inicio de sesión exitoso.")
         return driver.page_source  # Retornar el HTML de la página después del inicio de sesión
+
+    except TimeoutException as e:
+        app.logger.error(f"Error de tiempo de espera durante el inicio de sesión: {e}")
+        return None
 
     except Exception as e:
         app.logger.error(f"Error durante el inicio de sesión: {e}")
