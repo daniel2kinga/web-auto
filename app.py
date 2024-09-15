@@ -5,7 +5,11 @@ from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
+from selenium.common.exceptions import (
+    TimeoutException,
+    NoSuchElementException,
+    ElementClickInterceptedException,
+)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -38,51 +42,73 @@ def configurar_driver():
 
 def login_y_clic_derecho(driver, url, username, password):
     try:
-        # Navegar a la página de inicio de sesión
+        # Navegar a la página principal o de inicio de sesión
         driver.get(url)
         app.logger.info(f"Navegando a: {driver.current_url}")
 
         wait = WebDriverWait(driver, 20)
 
-        # Esperar que los campos de usuario y contraseña estén presentes
-        wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
-        wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
-
-        # Ingresar las credenciales
-        usuario_input = driver.find_element(By.NAME, "LoginControl$UserName")
-        contraseña_input = driver.find_element(By.NAME, "LoginControl$Password")
-
-        usuario_input.clear()
-        usuario_input.send_keys(username)
-        contraseña_input.clear()
-        contraseña_input.send_keys(password)
-
-        # Hacer clic en el botón de iniciar sesión inmediatamente después de ingresar las credenciales
-        iniciar_sesion_btn = driver.find_element(By.ID, "btn-login")
-
-        if iniciar_sesion_btn.is_enabled() and iniciar_sesion_btn.is_displayed():
-            iniciar_sesion_btn.click()
-            app.logger.info("Botón de iniciar sesión clicado inmediatamente después de ingresar las credenciales")
-        else:
-            app.logger.error("El botón de iniciar sesión no está habilitado o visible")
-            return None
-
-        # Esperar a que la URL cambie, indicando que se ha iniciado sesión
-        wait.until(EC.url_changes(url))
-        app.logger.info(f"URL después de iniciar sesión: {driver.current_url}")
-
-        # Verificar si el inicio de sesión fue exitoso
-        if "dashboard" in driver.current_url or "home" in driver.current_url:
-            app.logger.info("Login exitoso")
+        # Verificar si la sesión ya está iniciada
+        if verificar_sesion_iniciada(driver):
+            app.logger.info("La sesión ya está iniciada.")
+            # Continuar con las acciones posteriores si es necesario
             return driver.page_source
         else:
-            app.logger.error("El inicio de sesión no fue exitoso")
-            return None
+            app.logger.info("La sesión no está iniciada. Procediendo a iniciar sesión.")
+
+            # Proceder con el inicio de sesión
+            # Esperar que los campos de usuario y contraseña estén presentes
+            wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$UserName")))
+            wait.until(EC.presence_of_element_located((By.NAME, "LoginControl$Password")))
+
+            # Ingresar las credenciales
+            usuario_input = driver.find_element(By.NAME, "LoginControl$UserName")
+            contraseña_input = driver.find_element(By.NAME, "LoginControl$Password")
+
+            usuario_input.clear()
+            usuario_input.send_keys(username)
+            contraseña_input.clear()
+            contraseña_input.send_keys(password)
+
+            # Hacer clic en el botón de iniciar sesión inmediatamente después de ingresar las credenciales
+            iniciar_sesion_btn = driver.find_element(By.ID, "btn-login")
+
+            if iniciar_sesion_btn.is_enabled() and iniciar_sesion_btn.is_displayed():
+                iniciar_sesion_btn.click()
+                app.logger.info("Botón de iniciar sesión clicado.")
+            else:
+                app.logger.error("El botón de iniciar sesión no está habilitado o visible.")
+                return None
+
+            # Esperar a que la URL cambie, indicando que se ha iniciado sesión
+            wait.until(EC.url_changes(url))
+            app.logger.info(f"URL después de iniciar sesión: {driver.current_url}")
+
+            # Verificar si el inicio de sesión fue exitoso
+            if verificar_sesion_iniciada(driver):
+                app.logger.info("Inicio de sesión exitoso.")
+                return driver.page_source
+            else:
+                app.logger.error("El inicio de sesión no fue exitoso.")
+                return None
 
     except Exception as e:
         app.logger.error(f"Error durante el inicio de sesión: {str(e)}")
         app.logger.error(traceback.format_exc())
         return None
+
+def verificar_sesion_iniciada(driver):
+    try:
+        # Aquí, verificamos si hay elementos que solo aparecen cuando el usuario está autenticado
+        # Por ejemplo, un elemento del menú, un botón de cierre de sesión, etc.
+        # Reemplaza 'elemento_unico' con un selector adecuado para tu caso
+        wait = WebDriverWait(driver, 10)
+        elemento_autenticado = wait.until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "a[title='Cerrar sesión']"))
+        )
+        return True
+    except TimeoutException:
+        return False
 
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
