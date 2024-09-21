@@ -1,13 +1,4 @@
 # Usa una imagen oficial de Python como base
-
-# Agregar el script de instalación
-COPY install_firefox.sh /install_firefox.sh
-RUN chmod +x /install_firefox.sh
-RUN /install_firefox.sh
-
-
-
-
 FROM python:3.11-slim
 
 # Instalar dependencias necesarias
@@ -27,14 +18,23 @@ RUN apt-get update && apt-get install -y \
     libxi6 \
     libxss1 \
     libappindicator1 \
-    xdg-utils
+    xdg-utils \
+    firefox-esr  # Instalar Firefox ESR (Extended Support Release)
 
 # Instalar Google Chrome versión estable
 RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
 
-# Configurar la variable de entorno para Chrome en modo headless
+# Descargar e instalar GeckoDriver para Firefox
+RUN GECKO_VERSION=$(curl -s https://api.github.com/repos/mozilla/geckodriver/releases/latest | grep "tag_name" | cut -d '"' -f 4) \
+    && wget https://github.com/mozilla/geckodriver/releases/download/$GECKO_VERSION/geckodriver-$GECKO_VERSION-linux64.tar.gz \
+    && tar -xvzf geckodriver-$GECKO_VERSION-linux64.tar.gz \
+    && chmod +x geckodriver \
+    && mv geckodriver /usr/local/bin/
+
+# Configurar la variable de entorno para Chrome y Firefox en modo headless
 ENV CHROME_BIN=/usr/bin/google-chrome
+ENV FIREFOX_BIN=/usr/bin/firefox
 ENV PATH=$PATH:/usr/local/bin/
 
 # Crear un directorio de trabajo
@@ -51,4 +51,3 @@ EXPOSE 5000
 
 # Ejecutar la aplicación con Gunicorn
 CMD exec gunicorn -w 4 -b :${PORT} app:app
-
