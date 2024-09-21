@@ -1,4 +1,13 @@
 # Usa una imagen oficial de Python como base
+
+# Agregar el script de instalación
+COPY install_firefox.sh /install_firefox.sh
+RUN chmod +x /install_firefox.sh
+RUN /install_firefox.sh
+
+
+
+
 FROM python:3.11-slim
 
 # Instalar dependencias necesarias
