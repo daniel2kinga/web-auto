@@ -19,23 +19,13 @@ RUN apt-get update && apt-get install -y \
     libxss1 \
     libappindicator1 \
     xdg-utils \
-    firefox-esr  # Instalar Firefox ESR (Extended Support Release)
+    firefox-esr
 
-# Instalar Google Chrome versión estable
-RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
-
-# Descargar e instalar GeckoDriver para Firefox
-RUN GECKO_VERSION=$(curl -s https://api.github.com/repos/mozilla/geckodriver/releases/latest | grep "tag_name" | cut -d '"' -f 4) \
-    && wget https://github.com/mozilla/geckodriver/releases/download/$GECKO_VERSION/geckodriver-$GECKO_VERSION-linux64.tar.gz \
-    && tar -xvzf geckodriver-$GECKO_VERSION-linux64.tar.gz \
-    && chmod +x geckodriver \
-    && mv geckodriver /usr/local/bin/
-
-# Configurar la variable de entorno para Chrome y Firefox en modo headless
-ENV CHROME_BIN=/usr/bin/google-chrome
-ENV FIREFOX_BIN=/usr/bin/firefox
-ENV PATH=$PATH:/usr/local/bin/
+# Instalar geckodriver para Firefox
+RUN wget https://github.com/mozilla/geckodriver/releases/download/v0.32.0/geckodriver-v0.32.0-linux64.tar.gz \
+    && tar -xvzf geckodriver-v0.32.0-linux64.tar.gz \
+    && mv geckodriver /usr/local/bin/ \
+    && rm geckodriver-v0.32.0-linux64.tar.gz
 
 # Crear un directorio de trabajo
 WORKDIR /app
