@@ -8,24 +8,34 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from webdriver_manager.firefox import GeckoDriverManager
-import requests
 import time
 
 app = Flask(__name__)
-
-# Configuración de PrintNode
-PRINTNODE_API_KEY = "TU_API_KEY_DE_PRINTNODE"  # Reemplaza con tu API Key de PrintNode
-PRINTER_ID = "ID_DE_TU_IMPRESORA_EN_PRINTNODE"  # Reemplaza con el ID de la impresora en PrintNode
 
 def configurar_driver():
     firefox_options = Options()
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
     firefox_options.add_argument("--disable-gpu")
-    
+
+    # Configuraciones para evitar la ventana de impresión
+    firefox_options.set_preference("print.always_print_silent", True)
+    firefox_options.set_preference("print.show_print_progress", False)
+    firefox_options.set_preference("print.print_bgcolor", False)
+    firefox_options.set_preference("print.print_bgimages", False)
+    firefox_options.set_preference("print.print_head", False)
+    firefox_options.set_preference("print.print_foot", False)
+    firefox_options.set_preference("print.print_headerleft", "")
+    firefox_options.set_preference("print.print_headerright", "")
+    firefox_options.set_preference("print.print_footerleft", "")
+    firefox_options.set_preference("print.print_footerright", "")
+
+    # Inicializar el driver con las opciones configuradas
     service = Service(GeckoDriverManager().install())
     driver = webdriver.Firefox(service=service, options=firefox_options)
+
     return driver
+
 
 def iniciar_sesion(driver, url, username, password):
     driver.get(url)
@@ -63,29 +73,29 @@ def hacer_click_en_casos_totales(driver):
         app.logger.warning(f"El clic en 'Casos Totales' falló. Usando JavaScript para hacer clic: {e}")
         driver.execute_script("arguments[0].click();", boton_casos_totales)
 
-def descargar_escaneo(driver, download_path):
+def imprimir_prescripcion(driver):
     try:
-        # Esperar a que aparezca el botón de "Descargar" en la ventana emergente y hacer clic en él
-        boton_descargar = WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable((By.XPATH, "/html/body/main/ng-component/eup-dashboard/eup-labexport/div/div/div/div/div[4]/eup-button/button/span[3]"))
+        # Esperar a que aparezca el botón de "Imprimir" en la ventana emergente
+        boton_imprimir = WebDriverWait(driver, 20).until(
+            EC.element_to_be_clickable((By.XPATH, "//cr-button[@class='action-button' and text()='Imprimir']"))
         )
-
-        time.sleep(1)  # Añadir una pausa para evitar problemas con la carga
-        # Intentar hacer clic en el botón con JavaScript si el clic estándar falla
-        driver.execute_script("arguments[0].click();", boton_descargar)
-        app.logger.info("Escaneo descargado exitosamente.")
-
-        # Esperar que el archivo se descargue
-        time.sleep(5)  # Ajusta según sea necesario
-
-        # Retornar la ruta del archivo descargado
-        return os.path.join(download_path, "prescripcion.pdf")  # Asegúrate de que este archivo es el correcto
-
+        
+        # Añadir un retardo de 6 segundos antes de hacer clic
+        time.sleep(8)
+        driver.execute_script("arguments[0].scrollIntoView();", boton_imprimir);
+        # Intentar hacer clic en el botón de "Imprimir" usando JavaScript
+        driver.execute_script("arguments[0].click();", boton_imprimir)
+        
+        app.logger.info("Impresión realizada con éxito.")
+    
     except Exception as e:
-        app.logger.error(f"Error al intentar descargar el escaneo: {e}")
-        raise e  # Lanzar el error para ver más detalles
+        app.logger.error(f"Error al intentar imprimir la prescripción: {e}")
+        raise e
 
-def interactuar_con_pagina(driver, download_path):
+
+
+
+def interactuar_con_pagina(driver):
     # Hacer clic en el botón "Casos Totales"
     hacer_click_en_casos_totales(driver)
     time.sleep(2)  # Pausa para permitir la carga de los datos
@@ -95,11 +105,11 @@ def interactuar_con_pagina(driver, download_path):
         try:
             app.logger.info(f"Procesando fila {i}...")
 
-            # Verificar si el icono de descarga existe en la fila usando XPATH
-            icono_descarga_presente = len(driver.find_elements(By.XPATH, f"//tr[@id='tableRow_{i}']//svg[@class='svg-downloadSuccess24']")) > 0
+            # Verificar si el icono de prescripción impresa existe en la fila usando XPATH
+            icono_presente = len(driver.find_elements(By.XPATH, f"//tr[@id='tableRow_{i}']//svg[@class='svg-printSuccess24']")) > 0
             
-            if not icono_descarga_presente:
-                app.logger.info(f"Escaneo no descargado en la fila {i}. Procediendo a descargar...")
+            if not icono_presente:
+                app.logger.info(f"Prescripción no impresa en la fila {i}. Procediendo a imprimir...")
 
                 # Seleccionar la fila y abrir el menú de opciones
                 fila_caso = WebDriverWait(driver, 20).until(
@@ -112,50 +122,21 @@ def interactuar_con_pagina(driver, download_path):
 
                 time.sleep(2)  # Pausa antes de buscar el menú
 
-                # Esperar a que el menú aparezca y hacer clic en "Descargar escaneo"
+                # Esperar a que el menú aparezca y hacer clic en "Imprimir prescripción"
                 WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//li[contains(., 'Descargar escaneo')]"))
+                    EC.element_to_be_clickable((By.XPATH, "//li[contains(., 'Imprimir prescripción')]"))
                 ).click()
 
-                # Descargar el archivo y obtener la ruta
-                archivo_descargado = descargar_escaneo(driver, download_path)
-
-                # Enviar el archivo a PrintNode
-                enviar_a_printnode(archivo_descargado)
-
-                app.logger.info(f"Archivo descargado e impreso desde PrintNode para la fila {i}.")
+                # Hacer clic en el botón "Imprimir" en la ventana emergente
+                imprimir_prescripcion(driver)
+                time.sleep(2)  # Pausa después de la impresión
             else:
-                app.logger.info(f"El escaneo de la fila {i} ya está descargado. No se requiere acción.")
+                app.logger.info(f"La prescripción de la fila {i} ya está impresa. No se requiere acción.")
                 time.sleep(1)  # Pausa entre cada fila
-
+        
         except Exception as e:
             app.logger.error(f"Error al procesar la fila {i}: {e}")
             continue
-
-# Función para enviar el archivo descargado a PrintNode
-def enviar_a_printnode(file_path):
-    try:
-        url = 'https://api.printnode.com/printjobs'
-        headers = {'Authorization': f'Basic {PRINTNODE_API_KEY}'}
-        with open(file_path, 'rb') as f:
-            response = requests.post(
-                url,
-                headers=headers,
-                json={
-                    'printer': PRINTER_ID,
-                    'title': 'Prescripción',
-                    'contentType': 'pdf_uri',
-                    'content': file_path,  # URL pública o path al archivo
-                    'source': 'iTero'
-                }
-            )
-        if response.status_code == 201:
-            app.logger.info(f"Archivo enviado a PrintNode exitosamente: {response.json()}")
-        else:
-            app.logger.error(f"Error al enviar a PrintNode: {response.status_code} - {response.text}")
-    except Exception as e:
-        app.logger.error(f"Error al enviar a PrintNode: {e}")
-        raise e
 
 # Endpoint principal para extraer información
 @app.route('/extraer', methods=['POST'])
@@ -170,14 +151,13 @@ def extraer_pagina():
         password = data['password']
         app.logger.info(f"Iniciando sesión en la URL: {url}")
 
-        download_path = "/ruta/a/carpeta/descargas"  # Ajusta a la ruta deseada en tu servidor
-
         driver = configurar_driver()
         iniciar_sesion(driver, url, username, password)  # Iniciar sesión
 
-        interactuar_con_pagina(driver, download_path)  # Interactuar con la página después del login
+        interactuar_con_pagina(driver)  # Interactuar con la página después del login
 
-        return jsonify({"mensaje": "Interacción completada. Prescripción enviada a PrintNode."})
+        # Mantener el navegador abierto
+        return jsonify({"mensaje": "Interacción completada. Navegador abierto."})
     
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
@@ -185,4 +165,5 @@ def extraer_pagina():
 
 # Iniciar la aplicación Flask
 if __name__ == '__main__':
-    port = int(os.environ
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
