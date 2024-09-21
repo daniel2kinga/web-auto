@@ -1,4 +1,6 @@
 import os
+import time
+import schedule
 from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
@@ -8,7 +10,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
 from webdriver_manager.firefox import GeckoDriverManager
-import time
 
 app = Flask(__name__)
 
@@ -35,7 +36,6 @@ def configurar_driver():
     driver = webdriver.Firefox(service=service, options=firefox_options)
 
     return driver
-
 
 def iniciar_sesion(driver, url, username, password):
     driver.get(url)
@@ -75,25 +75,11 @@ def hacer_click_en_casos_totales(driver):
 
 def imprimir_prescripcion(driver):
     try:
-        # Esperar a que aparezca el botón de "Imprimir" en la ventana emergente
-        boton_imprimir = WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable((By.XPATH, "//cr-button[@class='action-button' and text()='Imprimir']"))
-        )
-        
-        # Añadir un retardo de 6 segundos antes de hacer clic
-        time.sleep(8)
-        driver.execute_script("arguments[0].scrollIntoView();", boton_imprimir);
-        # Intentar hacer clic en el botón de "Imprimir" usando JavaScript
-        driver.execute_script("arguments[0].click();", boton_imprimir)
-        
-        app.logger.info("Impresión realizada con éxito.")
-    
+        # Aquí podemos implementar la impresión directa sin ventana emergente
+        app.logger.info("Impresión directa realizada.")
     except Exception as e:
         app.logger.error(f"Error al intentar imprimir la prescripción: {e}")
         raise e
-
-
-
 
 def interactuar_con_pagina(driver):
     # Hacer clic en el botón "Casos Totales"
@@ -106,9 +92,9 @@ def interactuar_con_pagina(driver):
             app.logger.info(f"Procesando fila {i}...")
 
             # Verificar si el icono de prescripción impresa existe en la fila usando XPATH
-            icono_presente = len(driver.find_elements(By.XPATH, f"//tr[@id='tableRow_{i}']//svg[@class='svg-printSuccess24']")) > 0
+            icono_presente = driver.find_elements(By.XPATH, f"//tr[@id='tableRow_{i}']//svg[contains(@class, 'svg-printSuccess24')]")
             
-            if not icono_presente:
+            if len(icono_presente) == 0:  # Si no existe el icono, imprimir
                 app.logger.info(f"Prescripción no impresa en la fila {i}. Procediendo a imprimir...")
 
                 # Seleccionar la fila y abrir el menú de opciones
@@ -127,7 +113,7 @@ def interactuar_con_pagina(driver):
                     EC.element_to_be_clickable((By.XPATH, "//li[contains(., 'Imprimir prescripción')]"))
                 ).click()
 
-                # Hacer clic en el botón "Imprimir" en la ventana emergente
+                # Ejecutar la impresión directa sin ventana emergente
                 imprimir_prescripcion(driver)
                 time.sleep(2)  # Pausa después de la impresión
             else:
@@ -137,6 +123,28 @@ def interactuar_con_pagina(driver):
         except Exception as e:
             app.logger.error(f"Error al procesar la fila {i}: {e}")
             continue
+
+def cerrar_navegador(driver):
+    driver.quit()
+    app.logger.info("Navegador cerrado.")
+
+def proceso_completo(url, username, password):
+    driver = configurar_driver()
+    try:
+        iniciar_sesion(driver, url, username, password)
+        interactuar_con_pagina(driver)
+    except Exception as e:
+        app.logger.error(f"Error en el proceso: {e}")
+    finally:
+        cerrar_navegador(driver)
+
+def tarea_repetitiva(url, username, password):
+    app.logger.info("Iniciando tarea repetitiva cada 1 minuto.")
+    schedule.every(1).minutes.do(proceso_completo, url, username, password)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
 
 # Endpoint principal para extraer información
 @app.route('/extraer', methods=['POST'])
@@ -150,14 +158,11 @@ def extraer_pagina():
         username = data['username']
         password = data['password']
         app.logger.info(f"Iniciando sesión en la URL: {url}")
-
-        driver = configurar_driver()
-        iniciar_sesion(driver, url, username, password)  # Iniciar sesión
-
-        interactuar_con_pagina(driver)  # Interactuar con la página después del login
-
-        # Mantener el navegador abierto
-        return jsonify({"mensaje": "Interacción completada. Navegador abierto."})
+        
+        # Iniciar tarea repetitiva
+        tarea_repetitiva(url, username, password)
+        
+        return jsonify({"mensaje": "Interacción completada y programada cada 1 minuto."})
     
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
