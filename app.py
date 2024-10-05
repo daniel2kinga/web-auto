@@ -30,6 +30,7 @@ def configurar_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
     firefox_options.add_argument("--disable-gpu")
+firefox_options.add_argument("--headless")
 
     # Configuraciones para imprimir sin ventana emergente
     firefox_options.set_preference("print.always_print_silent", True)
