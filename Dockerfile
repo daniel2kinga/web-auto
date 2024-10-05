@@ -1,3 +1,4 @@
+# Usar una imagen base oficial de Python
 FROM python:3.9-slim
 
 # Instalar dependencias del sistema
@@ -49,8 +50,14 @@ COPY . /app
 # Instalar dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copiar el script de shell
+COPY entrypoint.sh /app/entrypoint.sh
+
+# Hacer el script de shell ejecutable
+RUN chmod +x /app/entrypoint.sh
+
 # Exponer el puerto
 EXPOSE 5000
 
-# Comando para iniciar la aplicación
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:$PORT"]
+# Establecer el script de shell como el punto de entrada
+ENTRYPOINT ["/app/entrypoint.sh"]
