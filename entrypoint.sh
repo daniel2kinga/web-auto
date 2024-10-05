@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Resolver la variable de entorno $PORT
 PORT=${PORT:-5000}
@@ -11,3 +11,4 @@ fi
 
 # Ejecutar gunicorn
 exec gunicorn app:app --bind 0.0.0.0:$PORT
+
