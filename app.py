@@ -32,7 +32,17 @@ def configurar_driver():
     firefox_options.add_argument("--disable-gpu")
 firefox_options.add_argument("--headless")  
     # Configuraciones para imprimir sin ventana emergente
-   
+    # Configuraciones para imprimir sin ventana emergente
+    firefox_options.set_preference("print.always_print_silent", True)
+    firefox_options.set_preference("print.show_print_progress", False)
+    firefox_options.set_preference("print.print_bgcolor", False)
+    firefox_options.set_preference("print.print_bgimages", False)
+    firefox_options.set_preference("print.print_head", False)
+    firefox_options.set_preference("print.print_foot", False)
+    firefox_options.set_preference("print.print_headerleft", "")
+    firefox_options.set_preference("print.print_headerright", "")
+    firefox_options.set_preference("print.print_footerleft", "")
+    firefox_options.set_preference("print.print_footerright", "")
 
     service = Service(GeckoDriverManager().install())
     driver = webdriver.Firefox(service=service, options=firefox_options)
