@@ -2,4 +2,5 @@ Flask
 selenium
 gunicorn
 webdriver-manager
+flask-cors
 
