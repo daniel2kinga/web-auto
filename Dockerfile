@@ -1,36 +1,25 @@
 FROM python:3.9-slim
 
-# Instalar dependencias del sistema y Firefox
+# Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
-    firefox-esr \
     wget \
-    bzip2 \
-    libnss3 \
-    libgtk-3-0 \
-    libdbus-glib-1-2 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxi6 \
-    libxtst6 \
-    libxrandr2 \
-    libasound2 \
-    libpango1.0-0 \
-    libpangocairo-1.0-0 \
-    libcairo2 \
-    fonts-liberation \
-    libappindicator3-1 \
-    lsb-release \
-    xdg-utils \
+    gnupg \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Instalar GeckoDriver
-RUN GECKODRIVER_VERSION=0.31.0 \
-    && wget https://github.com/mozilla/geckodriver/releases/download/v$GECKODRIVER_VERSION/geckodriver-v$GECKODRIVER_VERSION-linux64.tar.gz \
-    && tar -xzf geckodriver-v$GECKODRIVER_VERSION-linux64.tar.gz -C /usr/local/bin \
-    && rm geckodriver-v$GECKODRIVER_VERSION-linux64.tar.gz
+# Instalar Google Chrome
+RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar ChromeDriver
+RUN CHROMEDRIVER_VERSION=$(wget -qO- https://chromedriver.storage.googleapis.com/LATEST_RELEASE) \
+    && wget -O /tmp/chromedriver_linux64.zip https://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_linux64.zip \
+    && unzip /tmp/chromedriver_linux64.zip -d /usr/local/bin/ \
+    && rm /tmp/chromedriver_linux64.zip \
+    && chmod +x /usr/local/bin/chromedriver
 
 # Establecer el directorio de trabajo
 WORKDIR /app
