@@ -1,4 +1,3 @@
-# Usar una imagen base de Python
 FROM python:3.9-slim
 
 # Instalar dependencias del sistema y Firefox
@@ -36,13 +35,13 @@ RUN GECKODRIVER_VERSION=0.31.0 \
 # Establecer el directorio de trabajo
 WORKDIR /app
 
-# Copiar los archivos de la aplicación
+# Copiar archivos de la aplicación
 COPY . /app
 
-# Instalar las dependencias de Python
+# Instalar dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Exponer el puerto (opcional)
+# Exponer el puerto
 EXPOSE 5000
 
 # Comando para iniciar la aplicación
