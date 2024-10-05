@@ -2,7 +2,6 @@ import os
 import time
 import logging
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -23,7 +22,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-CORS(app)
 
 def configurar_driver():
     firefox_options = Options()
