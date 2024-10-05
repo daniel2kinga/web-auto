@@ -1,6 +1,6 @@
-Flask
-selenium
+Flask==2.2.2
+selenium==4.5.0
 gunicorn
-webdriver-manager
+webdriver-manager==3.8.5
 flask-cors
 
