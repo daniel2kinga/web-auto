@@ -187,3 +187,5 @@ def extraer_pagina():
     except Exception as e:
         logger.error(f"Error al procesar la solicitud: {e}")
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
+
+# No incluimos el bloque if __name__ == '__main__' para permitir que Gunicorn lo maneje
