@@ -1,3 +1,8 @@
+
+apt-get update
+apt-get install -y firefox-esr
+apt-get install -y libgtk-3-0 libdbus-glib-1-2
+
 # Usa una imagen oficial de Python como base
 FROM python:3.11-slim
 
