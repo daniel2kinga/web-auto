@@ -2,9 +2,10 @@ import os
 import time
 import logging
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import (
     NoSuchElementException,
@@ -15,42 +16,35 @@ from selenium.common.exceptions import (
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
-from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.firefox import GeckoDriverManager
 
 # Configuración del logger para imprimir mensajes en la terminal
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)
 
 def configurar_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Ejecutar en modo headless
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-setuid-sandbox")
-    chrome_options.add_argument("--disable-infobars")
-    chrome_options.add_argument("--disable-notifications")
-    chrome_options.add_argument("--remote-debugging-port=9222")
+    firefox_options = Options()
+    firefox_options.add_argument("--no-sandbox")
+    firefox_options.add_argument("--disable-dev-shm-usage")
+    firefox_options.add_argument("--disable-gpu")
 
-    # Configuraciones para impresión sin ventana emergente
-    prefs = {
-        "printing.print_preview_sticky_settings.appState": '{"recentDestinations":[{"id":"Save as PDF","origin":"local"}],"selectedDestinationId":"Save as PDF","version":2}',
-        "savefile.default_directory": os.getcwd(),
-        "download.default_directory": os.getcwd(),
-        "profile.default_content_settings.popups": 0,
-        "download.prompt_for_download": False,
-        "profile.managed_default_content_settings.images": 2,
-        "disk-cache-size": 4096,
-    }
-    chrome_options.add_experimental_option("prefs", prefs)
-    chrome_options.add_argument("--kiosk-printing")
+    # Configuraciones para imprimir sin ventana emergente
+    firefox_options.set_preference("print.always_print_silent", True)
+    firefox_options.set_preference("print.show_print_progress", False)
+    firefox_options.set_preference("print.print_bgcolor", False)
+    firefox_options.set_preference("print.print_bgimages", False)
+    firefox_options.set_preference("print.print_head", False)
+    firefox_options.set_preference("print.print_foot", False)
+    firefox_options.set_preference("print.print_headerleft", "")
+    firefox_options.set_preference("print.print_headerright", "")
+    firefox_options.set_preference("print.print_footerleft", "")
+    firefox_options.set_preference("print.print_footerright", "")
 
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    service = Service(GeckoDriverManager().install())
+    driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
 
 def iniciar_sesion(driver, url, username, password):
@@ -199,4 +193,3 @@ def extraer_pagina():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
-
