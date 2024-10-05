@@ -31,12 +31,10 @@ def configurar_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-gpu-sandbox")
-
-    # Configuraciones adicionales para Chrome
     chrome_options.add_argument("--disable-setuid-sandbox")
     chrome_options.add_argument("--disable-infobars")
     chrome_options.add_argument("--disable-notifications")
+    chrome_options.add_argument("--remote-debugging-port=9222")
 
     # Configuraciones para impresión sin ventana emergente
     prefs = {
@@ -45,10 +43,8 @@ def configurar_driver():
         "download.default_directory": os.getcwd(),
         "profile.default_content_settings.popups": 0,
         "download.prompt_for_download": False,
-        "printing.default_destination_selection_rules": {
-            "kind": "local",
-            "namePattern": "Save as PDF",
-        },
+        "profile.managed_default_content_settings.images": 2,
+        "disk-cache-size": 4096,
     }
     chrome_options.add_experimental_option("prefs", prefs)
     chrome_options.add_argument("--kiosk-printing")
