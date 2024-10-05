@@ -1,64 +1,44 @@
-# Usar una imagen base oficial de Python
-FROM python:3.9-slim
+# Usa una imagen oficial de Python como base
+FROM python:3.11-slim
 
-# Instalar dependencias del sistema
+# Instalar dependencias necesarias
 RUN apt-get update && apt-get install -y \
     wget \
-    gnupg \
+    curl \
     unzip \
-    fonts-liberation \
-    libappindicator3-1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcairo2 \
-    libcups2 \
-    libdrm2 \
-    libgbm1 \
+    gnupg \
+    apt-transport-https \
+    ca-certificates \
     libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
     libnss3 \
-    libpango-1.0-0 \
-    libx11-xcb1 \
-    libxcb-dri3-0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxrandr2 \
-    libxshmfence1 \
-    xdg-utils \
-    bash \
-    && rm -rf /var/lib/apt/lists/*
+    libgconf-2-4 \
+    libfontconfig1 \
+    libxrender1 \
+    libxtst6 \
+    libxi6 \
+    libxss1 \
+    libappindicator1 \
+    xdg-utils
 
-# Instalar Google Chrome
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable \
-    && rm -rf /var/lib/apt/lists/*
+# Instalar Google Chrome versión estable
+RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
 
-# Establecer variable de entorno para que webdriver-manager use la versión de Chrome instalada
-ENV WDM_LOCAL=True
+# Configurar la variable de entorno para Chrome en modo headless
+ENV CHROME_BIN=/usr/bin/google-chrome
+ENV PATH=$PATH:/usr/local/bin/
 
-# Establecer el directorio de trabajo
+# Crear un directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos de la aplicación
+# Copiar los archivos del proyecto al contenedor
 COPY . /app
 
-# Instalar dependencias de Python
+# Instalar las dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar el script de shell
-COPY entrypoint.sh /app/entrypoint.sh
-
-# Hacer el script de shell ejecutable
-RUN chmod +x /app/entrypoint.sh
-
-# Exponer el puerto
+# Exponer el puerto en el que correrá la aplicación Flask
 EXPOSE 5000
 
-# Establecer el script de shell como el punto de entrada
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Ejecutar la aplicación con Gunicorn
+CMD exec gunicorn -w 4 -b :${PORT} app:app
