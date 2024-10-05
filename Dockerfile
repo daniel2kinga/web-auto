@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libxshmfence1 \
     xdg-utils \
+    bash \
     && rm -rf /var/lib/apt/lists/*
 
 # Instalar Google Chrome
