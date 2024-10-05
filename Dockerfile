@@ -1,4 +1,4 @@
-# Imagen base
+# Usar una imagen base de Python
 FROM python:3.9-slim
 
 # Instalar dependencias del sistema y Firefox
@@ -23,7 +23,6 @@ RUN apt-get update && apt-get install -y \
     libcairo2 \
     fonts-liberation \
     libappindicator3-1 \
-    libnss3 \
     lsb-release \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -37,15 +36,14 @@ RUN GECKODRIVER_VERSION=0.31.0 \
 # Establecer el directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos de la aplicación
+# Copiar los archivos de la aplicación
 COPY . /app
 
-# Instalar dependencias de Python
+# Instalar las dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Exponer el puerto (opcional, ya que Railway lo asigna automáticamente)
+# Exponer el puerto (opcional)
 EXPOSE 5000
 
 # Comando para iniciar la aplicación
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000"]
-
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:$PORT"]
