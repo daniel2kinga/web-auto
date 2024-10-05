@@ -2,6 +2,7 @@ import os
 import time
 import logging
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
