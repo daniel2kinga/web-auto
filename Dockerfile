@@ -19,9 +19,9 @@ RUN apt-get update && apt-get install -y \
     libxss1 \
     libappindicator1 \
     xdg-utils \
-    firefox-esr \  # Instala Firefox
-    libgtk-3-0 \  # Instala dependencias adicionales de Firefox
-    libdbus-glib-1-2  # Instala dependencias adicionales de Firefox
+    firefox-esr \
+    libgtk-3-0 \
+    libdbus-glib-1-2
 
 # Instalar geckodriver para Firefox
 RUN wget https://github.com/mozilla/geckodriver/releases/download/v0.32.0/geckodriver-v0.32.0-linux64.tar.gz \
@@ -43,4 +43,5 @@ EXPOSE 5000
 
 # Ejecutar la aplicación con Gunicorn
 CMD exec gunicorn -w 4 -b :${PORT} app:app
+
 
