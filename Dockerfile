@@ -1,44 +1,29 @@
-# Usa una imagen oficial de Python como base
-FROM python:3.11-slim
+# Imagen base
+FROM python:3.9-slim
 
-# Instalar dependencias necesarias
+# Instalar dependencias del sistema
 RUN apt-get update && apt-get install -y \
+    firefox-esr \
     wget \
-    curl \
-    unzip \
-    gnupg \
-    apt-transport-https \
-    ca-certificates \
-    libglib2.0-0 \
-    libnss3 \
-    libgconf-2-4 \
-    libfontconfig1 \
-    libxrender1 \
-    libxtst6 \
-    libxi6 \
-    libxss1 \
-    libappindicator1 \
-    xdg-utils \
-    firefox-esr
+    bzip2 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Instalar geckodriver para Firefox
-RUN wget https://github.com/mozilla/geckodriver/releases/download/v0.32.0/geckodriver-v0.32.0-linux64.tar.gz \
-    && tar -xvzf geckodriver-v0.32.0-linux64.tar.gz \
-    && mv geckodriver /usr/local/bin/ \
-    && rm geckodriver-v0.32.0-linux64.tar.gz
+# Instalar GeckoDriver
+RUN wget https://github.com/mozilla/geckodriver/releases/download/v0.31.0/geckodriver-v0.31.0-linux64.tar.gz \
+    && tar -xzf geckodriver-v0.31.0-linux64.tar.gz -C /usr/local/bin \
+    && rm geckodriver-v0.31.0-linux64.tar.gz
 
-# Crear un directorio de trabajo
+# Establecer el directorio de trabajo
 WORKDIR /app
 
-# Copiar los archivos del proyecto al contenedor
+# Copiar archivos de la aplicación
 COPY . /app
 
-# Instalar las dependencias de Python
+# Instalar dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Exponer el puerto en el que correrá la aplicación Flask
+# Exponer el puerto
 EXPOSE 5000
 
-# Ejecutar la aplicación con Gunicorn
-CMD exec gunicorn -w 4 -b :${PORT} app:app
-
+# Comando para iniciar la aplicación
+CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000"]
