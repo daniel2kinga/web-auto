@@ -1,6 +1,6 @@
 import os
 import time
-from flask import Flask, jsonify
+from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -13,12 +13,12 @@ app = Flask(__name__)
 
 def configurar_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Ejecutar en modo headless si no necesitas ver el navegador
+    chrome_options.add_argument("--headless")  # Ejecutar en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
-    chrome_options.add_argument("--disable-cache")  # Desactivar caché
+    chrome_options.add_argument("--remote-debugging-port=9222")
+    chrome_options.add_argument("--disable-cache")
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -37,7 +37,6 @@ def interactuar_con_pagina(driver):
     time.sleep(2)  # Esperar un poco para asegurar que el contenido se carga
 
     # Encontrar y hacer clic en la imagen de la primera ventana en la sección 'Reviews'
-    # Obtenemos el elemento padre que contiene las tarjetas de 'Reviews'
     reviews_parent = reviews_section.find_element(By.XPATH, './following-sibling::*[1]')
     first_review_link = reviews_parent.find_element(By.XPATH, './/a')
     first_review_link.click()
@@ -53,10 +52,21 @@ def interactuar_con_pagina(driver):
 
     return texto_extraido
 
-@app.route('/extraer', methods=['GET'])
+@app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     driver = configurar_driver()
     try:
+        # Manejar datos enviados en la solicitud POST (si es necesario)
+        data = request.get_json()
+        if data and 'url' in data:
+            # Si se proporciona una URL en la solicitud, se puede utilizar aquí
+            url = data['url']
+            app.logger.info(f"Navegando a la URL proporcionada: {url}")
+            driver.get(url)
+            # Opcionalmente, puedes modificar 'interactuar_con_pagina' para aceptar una URL
+        else:
+            app.logger.info("No se proporcionó URL, utilizando el flujo predeterminado.")
+
         texto_extraido = interactuar_con_pagina(driver)
         return jsonify({"contenido": texto_extraido})
     except Exception as e:
