@@ -36,27 +36,29 @@ def interactuar_con_pagina(driver, url):
             EC.presence_of_element_located((By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column'))
         )
         app.logger.info("Artículos del blog encontrados")
-        
+
         # Encontrar todos los artículos
         articles = driver.find_elements(By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column')
-        
+
         if not articles:
             app.logger.error("No se encontraron artículos en la página")
             return None
-        
+
         # Obtener el primer artículo
         first_article = articles[0]
-        
-        # Dentro del primer artículo, encontrar la imagen
-        image_element = first_article.find_element(By.CSS_SELECTOR, 'div.eael-entry-thumbnail.eael-image-ratio picture img')
-        app.logger.info("Imagen del primer post encontrada")
-        
-        # Hacer clic en la imagen
-        driver.execute_script("arguments[0].click();", image_element)
-        app.logger.info("Haciendo clic en la imagen del primer post del blog")
-        
+
+        # Dentro del primer artículo, encontrar el elemento con la clase específica
+        # Vamos a buscar el div con la clase 'eael-entry-overlay'
+        clickable_element = first_article.find_element(By.CSS_SELECTOR, 'div.eael-entry-overlay')
+
+        app.logger.info("Elemento para hacer clic encontrado")
+
+        # Hacer clic en el elemento
+        driver.execute_script("arguments[0].click();", clickable_element)
+        app.logger.info("Haciendo clic en el elemento del primer post del blog")
+
     except Exception as e:
-        app.logger.error(f"No se pudo encontrar o hacer clic en la imagen del primer post del blog: {e}")
+        app.logger.error(f"No se pudo encontrar o hacer clic en el elemento del primer post del blog: {e}")
         return None
 
     # Esperar a que la nueva página cargue completamente
@@ -86,7 +88,7 @@ def extraer_pagina():
 
         url = data['url']
         app.logger.info(f"Extrayendo contenido de la URL: {url}")
-        
+
         texto_extraido = interactuar_con_pagina(driver, url)  # Interactuar con la página
 
         if texto_extraido is None:
