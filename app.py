@@ -47,18 +47,18 @@ def interactuar_con_pagina(driver, url):
         # Obtener el primer artículo
         first_article = articles[0]
 
-        # Dentro del primer artículo, encontrar el elemento con la clase específica
-        # Vamos a buscar el div con la clase 'eael-entry-overlay'
-        clickable_element = first_article.find_element(By.CSS_SELECTOR, 'div.eael-entry-overlay')
+        # Dentro del primer artículo, encontrar el enlace al post
+        post_link_element = first_article.find_element(By.CSS_SELECTOR, 'div.eael-entry-overlay a')
+        post_url = post_link_element.get_attribute('href')
 
-        app.logger.info("Elemento para hacer clic encontrado")
+        app.logger.info(f"Enlace al post encontrado: {post_url}")
 
-        # Hacer clic en el elemento
-        driver.execute_script("arguments[0].click();", clickable_element)
-        app.logger.info("Haciendo clic en el elemento del primer post del blog")
+        # Navegar a la URL del post
+        driver.get(post_url)
+        app.logger.info(f"Navegando al post: {driver.current_url}")
 
     except Exception as e:
-        app.logger.error(f"No se pudo encontrar o hacer clic en el elemento del primer post del blog: {e}")
+        app.logger.error(f"No se pudo obtener el enlace del primer post del blog: {e}")
         return None
 
     # Esperar a que la nueva página cargue completamente
