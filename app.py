@@ -1,6 +1,7 @@
 import os
 import time
-from flask import Flask, request, jsonify
+import requests  # Agregar esta importación para descargar la imagen
+from flask import Flask, request, jsonify, send_file
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -76,7 +77,32 @@ def interactuar_con_pagina(driver, url):
     texto_extraido = " ".join([element.text for element in contenido])
     app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
 
-    return texto_extraido
+    # Descargar la imagen del artículo
+    try:
+        # Suponiendo que la imagen principal del artículo está dentro de una etiqueta <img> con una clase específica
+        # Necesitamos ajustar el selector CSS según la estructura real de la página
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.post-thumbnail img')
+        imagen_url = imagen_element.get_attribute('src')
+
+        app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
+
+        # Descargar la imagen
+        imagen_respuesta = requests.get(imagen_url, stream=True)
+        if imagen_respuesta.status_code == 200:
+            # Guardar la imagen en un archivo temporal
+            imagen_nombre = 'imagen_descargada.jpg'
+            with open(imagen_nombre, 'wb') as f:
+                for chunk in imagen_respuesta.iter_content(1024):
+                    f.write(chunk)
+            app.logger.info("Imagen descargada correctamente")
+        else:
+            app.logger.error("No se pudo descargar la imagen")
+            imagen_nombre = None
+    except Exception as e:
+        app.logger.error(f"No se pudo encontrar o descargar la imagen: {e}")
+        imagen_nombre = None
+
+    return texto_extraido, imagen_nombre
 
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
@@ -89,12 +115,23 @@ def extraer_pagina():
         url = data['url']
         app.logger.info(f"Extrayendo contenido de la URL: {url}")
 
-        texto_extraido = interactuar_con_pagina(driver, url)  # Interactuar con la página
+        resultado = interactuar_con_pagina(driver, url)  # Interactuar con la página
 
-        if texto_extraido is None:
-            return jsonify({"error": "No se pudo extraer el texto"}), 500
+        if resultado is None:
+            return jsonify({"error": "No se pudo extraer el texto o descargar la imagen"}), 500
 
-        return jsonify({"url": url, "contenido": texto_extraido})
+        texto_extraido, imagen_nombre = resultado
+
+        response_data = {
+            "url": url,
+            "contenido": texto_extraido
+        }
+
+        if imagen_nombre:
+            # Devolver el contenido y enviar la imagen como archivo adjunto
+            return send_file(imagen_nombre, mimetype='image/jpeg', as_attachment=True, attachment_filename=imagen_nombre), 200, {'Content-Type': 'application/json'}
+        else:
+            return jsonify(response_data)
 
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
@@ -102,6 +139,9 @@ def extraer_pagina():
 
     finally:
         driver.quit()
+        # Eliminar la imagen descargada si existe
+        if 'imagen_nombre' in locals() and imagen_nombre and os.path.exists(imagen_nombre):
+            os.remove(imagen_nombre)
 
 # Configurar el servidor para usar el puerto proporcionado por Railway
 if __name__ == '__main__':
