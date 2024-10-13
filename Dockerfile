@@ -1,53 +1,44 @@
-# Utilizar una imagen base de Python
-FROM python:3.9-slim
+# Usa una imagen oficial de Python como base
+FROM python:3.11-slim
 
-# Establecer la variable de entorno PYTHONUNBUFFERED
-ENV PYTHONUNBUFFERED=1
-
-# Instalar dependencias del sistema necesarias para Chrome
+# Instalar dependencias necesarias
 RUN apt-get update && apt-get install -y \
     wget \
-    gnupg \
+    curl \
     unzip \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libcups2 \
-    libdrm2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libgtk-3-0 \
+    gnupg \
+    apt-transport-https \
+    ca-certificates \
+    libglib2.0-0 \
     libnss3 \
-    libxshmfence1 \
-    libglu1-mesa \
-    libxi6 \
     libgconf-2-4 \
-    libpango1.0-0 \
-    libpangocairo-1.0-0 \
-    libxcb-dri3-0 \
-    && rm -rf /var/lib/apt/lists/*
+    libfontconfig1 \
+    libxrender1 \
+    libxtst6 \
+    libxi6 \
+    libxss1 \
+    libappindicator1 \
+    xdg-utils
 
-# Descargar e instalar Google Chrome
-RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
-    && apt-get update && apt-get install -y google-chrome-stable
+# Instalar Google Chrome versión estable
+RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
 
-# Crear directorio de la aplicación
+# Configurar la variable de entorno para Chrome en modo headless
+ENV CHROME_BIN=/usr/bin/google-chrome
+ENV PATH=$PATH:/usr/local/bin/
+
+# Crear un directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos de la aplicación
+# Copiar los archivos del proyecto al contenedor
 COPY . /app
 
-# Instalar dependencias de Python
+# Instalar las dependencias de Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Exponer el puerto
+# Exponer el puerto en el que correrá la aplicación Flask
 EXPOSE 5000
 
-# Comando para ejecutar la aplicación con Gunicorn
-CMD ["gunicorn", "--workers=1", "--timeout=120", "-b", "0.0.0.0:5000", "app:app"]
+# Ejecutar la aplicación con Gunicorn
+CMD exec gunicorn -w 4 -b :${PORT} app:app
