@@ -1,6 +1,6 @@
 import os
 import time
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -13,60 +13,59 @@ app = Flask(__name__)
 
 def configurar_driver():
     chrome_options = Options()
-    
+    chrome_options.add_argument("--headless")  # Ejecutar en modo headless si no necesitas ver el navegador
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
     chrome_options.add_argument("--disable-cache")  # Desactivar caché
-    chrome_options.add_argument("--headless")  # Esta línea estaba mal indentada
-    
+
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
+def interactuar_con_pagina(driver):
+    # Navegar a la página principal
+    driver.get('https://www.cnet.com/ai-atlas/')
+    app.logger.info(f"Navegando a: {driver.current_url}")
+    
+    # Esperar a que la sección 'Reviews' esté presente
+    reviews_section = WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.XPATH, '//h2[contains(text(), "Reviews")]'))
+    )
+    driver.execute_script("arguments[0].scrollIntoView();", reviews_section)
+    time.sleep(2)  # Esperar un poco para asegurar que el contenido se carga
 
-def interactuar_con_pagina(driver, url):
-    # Navegar a la nueva URL
-    driver.get(url)
-    app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar la URL actual
-    driver.refresh()  # Forzar la recarga de la página
+    # Encontrar y hacer clic en la imagen de la primera ventana en la sección 'Reviews'
+    # Obtenemos el elemento padre que contiene las tarjetas de 'Reviews'
+    reviews_parent = reviews_section.find_element(By.XPATH, './following-sibling::*[1]')
+    first_review_link = reviews_parent.find_element(By.XPATH, './/a')
+    first_review_link.click()
+    app.logger.info(f"Después de hacer clic, URL actual: {driver.current_url}")
 
-    # Esperar a que un elemento clave esté presente en la página (por ejemplo, un párrafo <p>)
+    # Esperar a que la nueva página cargue completamente
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "p")))
 
-    # Obtener y devolver el contenido HTML completo de la página para verificar
-    html_final = driver.page_source
-    app.logger.info(f"Contenido HTML después de la navegación:\n{html_final[:1000]}...")  # Mostrar solo los primeros 1000 caracteres del HTML
+    # Extraer el contenido de la página actual
+    contenido = driver.find_elements(By.TAG_NAME, "p")
+    texto_extraido = " ".join([element.text for element in contenido])
+    app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
 
-    return html_final
+    return texto_extraido
 
-@app.route('/extraer', methods=['POST'])
+@app.route('/extraer', methods=['GET'])
 def extraer_pagina():
+    driver = configurar_driver()
     try:
-        data = request.json
-        if not data or 'url' not in data:
-            return jsonify({"error": "No se proporcionó URL"}), 400
-
-        url = data['url']
-        app.logger.info(f"Extrayendo contenido de la URL: {url}")
-        
-        driver = configurar_driver()
-        html_final = interactuar_con_pagina(driver, url)  # Interactuar con la página
-
-        # Extraer el contenido de la página actual
-        contenido = driver.find_elements(By.TAG_NAME, "p")
-        texto_extraido = " ".join([element.text for element in contenido])
-        app.logger.info(f"Texto extraído: {texto_extraido}")
-
-        driver.quit()
-        return jsonify({"url": url, "contenido": texto_extraido})
-
+        texto_extraido = interactuar_con_pagina(driver)
+        return jsonify({"contenido": texto_extraido})
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
+    finally:
+        driver.quit()
 
 # Configurar el servidor para usar el puerto proporcionado por Railway
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
