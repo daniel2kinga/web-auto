@@ -14,55 +14,72 @@ app = Flask(__name__)
 def configurar_driver():
     chrome_options = Options()
     
+    chrome_options.add_argument("--headless")  # Ejecutar en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--remote-debugging-port=9222")  # Necesario para Railway
     chrome_options.add_argument("--disable-cache")  # Desactivar caché
-chrome_options.add_argument("--disable-cache") 
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--window-size=1920,1080")
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
-def interactuar_con_pagina(driver, url):
-    # Navegar a la nueva URL
+def interactuar_con_pagina(driver):
+    # Navegar a la página principal
+    url = 'https://www.cnet.com'
     driver.get(url)
     app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar la URL actual
-    driver.refresh()  # Forzar la recarga de la página
 
-    # Esperar a que un elemento clave esté presente en la página (por ejemplo, un párrafo <p>)
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "p")))
+    # Esperar a que las entradas del blog estén presentes
+    try:
+        # Esperar a que la primera entrada del blog esté presente y sea clicable
+        first_blog_post = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, 'a.assetHed'))
+        )
+        app.logger.info("Encontrado el primer post del blog")
+        # Hacer clic en la primera entrada del blog
+        first_blog_post.click()
+        app.logger.info("Haciendo clic en el primer post del blog")
+    except Exception as e:
+        app.logger.error(f"No se pudo encontrar o hacer clic en el primer post del blog: {e}")
+        return None
 
-    # Obtener y devolver el contenido HTML completo de la página para verificar
-    html_final = driver.page_source
-    app.logger.info(f"Contenido HTML después de la navegación:\n{html_final[:1000]}...")  # Mostrar solo los primeros 1000 caracteres del HTML
+    # Esperar a que la nueva página cargue completamente
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.TAG_NAME, "p"))
+        )
+        app.logger.info("Página del artículo cargada")
+    except Exception as e:
+        app.logger.error(f"Error al cargar la página del artículo: {e}")
+        return None
 
-    return html_final
+    # Extraer el contenido de la página actual
+    contenido = driver.find_elements(By.TAG_NAME, "p")
+    texto_extraido = " ".join([element.text for element in contenido])
+    app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
+
+    return texto_extraido
 
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     try:
-        data = request.json
-        if not data or 'url' not in data:
-            return jsonify({"error": "No se proporcionó URL"}), 400
-
-        url = data['url']
-        app.logger.info(f"Extrayendo contenido de la URL: {url}")
-        
         driver = configurar_driver()
-        html_final = interactuar_con_pagina(driver, url)  # Interactuar con la página
+        texto_extraido = interactuar_con_pagina(driver)  # Interactuar con la página
 
-        # Extraer el contenido de la página actual
-        contenido = driver.find_elements(By.TAG_NAME, "p")
-        texto_extraido = " ".join([element.text for element in contenido])
-        app.logger.info(f"Texto extraído: {texto_extraido}")
+        if texto_extraido is None:
+            return jsonify({"error": "No se pudo extraer el texto"}), 500
 
         driver.quit()
-        return jsonify({"url": url, "contenido": texto_extraido})
+        return jsonify({"contenido": texto_extraido})
 
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
+
+    finally:
+        driver.quit()
 
 # Configurar el servidor para usar el puerto proporcionado por Railway
 if __name__ == '__main__':
