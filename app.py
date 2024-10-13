@@ -28,21 +28,37 @@ def configurar_driver():
 def interactuar_con_pagina(driver, url):
     # Navegar a la URL proporcionada
     driver.get(url)
-    app.logger.info(f"Navegando a: {driver.current_url}")
+    app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar la URL actual
 
     try:
-        # Esperar a que el elemento especificado esté presente
-        elemento_para_clic = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, '#eael-post-grid-e95390b > div.eael-post-grid.eael-post-appender.eael-post-appender-e95390b.eael-post-grid-style-one > article:nth-child(1) > div > div > div.eael-entry-media > div.eael-entry-thumbnail.eael-image-ratio > picture'))
+        # Esperar a que los artículos del blog estén presentes
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column'))
         )
-        app.logger.info("Elemento encontrado para hacer clic")
+        app.logger.info("Artículos del blog encontrados")
 
-        # Hacer clic en el elemento
-        driver.execute_script("arguments[0].click();", elemento_para_clic)
-        app.logger.info("Haciendo clic en el elemento especificado")
+        # Encontrar todos los artículos
+        articles = driver.find_elements(By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column')
+
+        if not articles:
+            app.logger.error("No se encontraron artículos en la página")
+            return None
+
+        # Obtener el primer artículo
+        first_article = articles[0]
+
+        # Dentro del primer artículo, encontrar el enlace al post
+        post_link_element = first_article.find_element(By.CSS_SELECTOR, 'div.eael-entry-overlay a')
+        post_url = post_link_element.get_attribute('href')
+
+        app.logger.info(f"Enlace al post encontrado: {post_url}")
+
+        # Navegar a la URL del post
+        driver.get(post_url)
+        app.logger.info(f"Navegando al post: {driver.current_url}")
 
     except Exception as e:
-        app.logger.error(f"No se pudo encontrar o hacer clic en el elemento especificado: {e}")
+        app.logger.error(f"No se pudo obtener el enlace del primer post del blog: {e}")
         return None
 
     # Esperar a que la nueva página cargue completamente
@@ -58,7 +74,7 @@ def interactuar_con_pagina(driver, url):
     # Extraer el contenido de la página actual
     contenido = driver.find_elements(By.TAG_NAME, "p")
     texto_extraido = " ".join([element.text for element in contenido])
-    app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")
+    app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
 
     return texto_extraido
 
@@ -73,7 +89,7 @@ def extraer_pagina():
         url = data['url']
         app.logger.info(f"Extrayendo contenido de la URL: {url}")
 
-        texto_extraido = interactuar_con_pagina(driver, url)
+        texto_extraido = interactuar_con_pagina(driver, url)  # Interactuar con la página
 
         if texto_extraido is None:
             return jsonify({"error": "No se pudo extraer el texto"}), 500
@@ -87,6 +103,7 @@ def extraer_pagina():
     finally:
         driver.quit()
 
+# Configurar el servidor para usar el puerto proporcionado por Railway
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
