@@ -1,4 +1,4 @@
-import os 
+import os
 import time
 from flask import Flask, request, jsonify
 from selenium import webdriver
@@ -20,13 +20,13 @@ def configurar_driver():
     chrome_options.add_argument("--disable-cache")  # Desactivar caché
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--window-size=1920,1080")
-    
+
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
 def interactuar_con_pagina(driver, url):
-    # Navegar a la nueva URL
+    # Navegar a la URL proporcionada
     driver.get(url)
     app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar la URL actual
 
@@ -47,16 +47,16 @@ def interactuar_con_pagina(driver, url):
         # Obtener el primer artículo
         first_article = articles[0]
         
-        # Dentro del primer artículo, encontrar el enlace al post
-        first_post_link = first_article.find_element(By.CSS_SELECTOR, 'a.eael-grid-post-link')
-        app.logger.info(f"Encontrado el enlace del primer post: {first_post_link.get_attribute('href')}")
+        # Dentro del primer artículo, encontrar la imagen
+        image_element = first_article.find_element(By.CSS_SELECTOR, 'div.eael-entry-thumbnail.eael-image-ratio picture img')
+        app.logger.info("Imagen del primer post encontrada")
         
-        # Hacer clic en el enlace
-        first_post_link.click()
-        app.logger.info("Haciendo clic en el primer post del blog")
+        # Hacer clic en la imagen
+        driver.execute_script("arguments[0].click();", image_element)
+        app.logger.info("Haciendo clic en la imagen del primer post del blog")
         
     except Exception as e:
-        app.logger.error(f"No se pudo encontrar o hacer clic en el primer post del blog: {e}")
+        app.logger.error(f"No se pudo encontrar o hacer clic en la imagen del primer post del blog: {e}")
         return None
 
     # Esperar a que la nueva página cargue completamente
