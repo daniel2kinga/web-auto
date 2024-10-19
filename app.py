@@ -22,6 +22,8 @@ def configurar_driver():
     chrome_options.add_argument("--disable-cache")  # Desactivar caché
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--window-size=1920,1080")
+    # Agregar un User-Agent para evitar ser bloqueado por el sitio web
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -35,15 +37,15 @@ def interactuar_con_pagina(driver, url):
     try:
         # Esperar a que los artículos del blog estén presentes
         WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.type-post'))
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.post'))
         )
         app.logger.info("Artículos del blog encontrados")
 
         # Encontrar el primer artículo
-        first_article = driver.find_element(By.CSS_SELECTOR, 'article.type-post')
+        first_article = driver.find_element(By.CSS_SELECTOR, 'article.post')
 
         # Obtener el enlace al artículo
-        post_link_element = first_article.find_element(By.CSS_SELECTOR, 'a.read-more')
+        post_link_element = first_article.find_element(By.CSS_SELECTOR, 'h3.entry-title a')
         post_url = post_link_element.get_attribute('href')
         app.logger.info(f"URL del artículo encontrado: {post_url}")
 
@@ -75,7 +77,7 @@ def interactuar_con_pagina(driver, url):
 
     # Obtener la imagen del artículo
     try:
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'figure.wp-block-image img')
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
