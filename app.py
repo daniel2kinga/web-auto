@@ -7,6 +7,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
@@ -23,7 +24,7 @@ def configurar_driver():
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--window-size=1920,1080")
     # Agregar un User-Agent para evitar ser bloqueado por el sitio web
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)...")
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -35,35 +36,27 @@ def interactuar_con_pagina(driver, url):
     app.logger.info(f"Navegando a: {driver.current_url}")
 
     try:
-        # Esperar a que los artículos del blog estén presentes
+        # Esperar a que los elementos (ventanas) estén presentes
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'article.post'))
         )
-        app.logger.info("Artículos del blog encontrados")
+        app.logger.info("Elementos encontrados en la página principal")
 
-        # Encontrar el primer artículo
-        first_article = driver.find_element(By.CSS_SELECTOR, 'article.post')
+        # Encontrar el primer elemento (ventana)
+        first_element = driver.find_element(By.CSS_SELECTOR, 'article.post')
 
-        # Obtener el enlace al artículo
-        post_link_element = first_article.find_element(By.CSS_SELECTOR, 'h3.entry-title a')
-        post_url = post_link_element.get_attribute('href')
-        app.logger.info(f"URL del artículo encontrado: {post_url}")
+        # Hacer clic en el primer elemento
+        first_element.click()
+        app.logger.info("Hizo clic en el primer elemento")
 
-        # Navegar a la URL del artículo
-        driver.get(post_url)
-        app.logger.info(f"Navegando al artículo: {driver.current_url}")
-    except Exception as e:
-        app.logger.error(f"No se pudo obtener el enlace del artículo: {e}")
-        return None, None, None
-
-    # Esperar a que la página del artículo cargue
-    try:
+        # Esperar a que la nueva página cargue
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'div.entry-content'))
         )
         app.logger.info("Página del artículo cargada")
+
     except Exception as e:
-        app.logger.error(f"Error al cargar la página del artículo: {e}")
+        app.logger.error(f"Error al hacer clic en el primer elemento: {e}")
         return None, None, None
 
     # Extraer el contenido del artículo
