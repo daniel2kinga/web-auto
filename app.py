@@ -1,5 +1,7 @@
 import os
 import time
+import base64
+import requests
 from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -78,16 +80,28 @@ def interactuar_con_pagina(driver, url):
 
     # Obtener la URL de la imagen del artículo
     try:
-        # Suponiendo que la imagen principal del artículo está dentro de un elemento con clase 'post-thumbnail'
         # Ajusta el selector CSS según la estructura real de la página
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.post-thumbnail img')
-        imagen_url = imagen_element.get_attribute('src')
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img')
+        imagen_url = imagen_element.get_attribute('src') or imagen_element.get_attribute('data-src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
         app.logger.error(f"No se pudo encontrar la imagen: {e}")
         imagen_url = None
 
-    return texto_extraido, imagen_url
+    # Descargar la imagen y codificarla en Base64
+    imagen_base64 = None
+    if imagen_url:
+        try:
+            imagen_respuesta = requests.get(imagen_url)
+            if imagen_respuesta.status_code == 200:
+                imagen_base64 = base64.b64encode(imagen_respuesta.content).decode('utf-8')
+                app.logger.info("Imagen descargada y codificada en Base64")
+            else:
+                app.logger.error("No se pudo descargar la imagen")
+        except Exception as e:
+            app.logger.error(f"Error al descargar la imagen: {e}")
+
+    return texto_extraido, imagen_url, imagen_base64
 
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
@@ -100,17 +114,18 @@ def extraer_pagina():
         url = data['url']
         app.logger.info(f"Extrayendo contenido de la URL: {url}")
 
-        resultado = interactuar_con_pagina(driver, url)  # Interactuar con la página
+        resultado = interactuar_con_pagina(driver, url)
 
         if resultado is None:
-            return jsonify({"error": "No se pudo extraer el texto o la URL de la imagen"}), 500
+            return jsonify({"error": "No se pudo extraer el texto o la imagen"}), 500
 
-        texto_extraido, imagen_url = resultado
+        texto_extraido, imagen_url, imagen_base64 = resultado
 
         response_data = {
             "url": url,
             "contenido": texto_extraido,
-            "imagen_url": imagen_url
+            "imagen_url": imagen_url,
+            "imagen_base64": imagen_base64  # Añadimos la imagen codificada en Base64
         }
 
         return jsonify(response_data)
