@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 def configurar_driver():
     chrome_options = Options()
-    # chrome_options.add_argument("--headless")  # Ejecutar en modo headless (comentado para depuración)
+    chrome_options.add_argument("--headless")  # Ejecutar en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
@@ -41,18 +41,8 @@ def interactuar_con_pagina(driver, url):
         )
         app.logger.info("Primer elemento encontrado y clicable")
 
-        # Verificar visibilidad y estado
-        is_displayed = first_element.is_displayed()
-        is_enabled = first_element.is_enabled()
-        app.logger.info(f"Visible: {is_displayed}, Habilitado: {is_enabled}")
-
-        # Desplazarse al elemento
-        driver.execute_script("arguments[0].scrollIntoView(true);", first_element)
-        time.sleep(1)
-
-        # Hacer clic usando ActionChains
-        actions = ActionChains(driver)
-        actions.move_to_element(first_element).click().perform()
+        # Hacer clic en el primer elemento
+        first_element.click()
         app.logger.info("Hizo clic en el primer elemento")
 
         # Esperar a que la nueva página cargue
@@ -64,12 +54,6 @@ def interactuar_con_pagina(driver, url):
     except Exception as e:
         app.logger.error("Error al hacer clic en el primer elemento", exc_info=True)
         return None, None, None
-
-    # Extraer contenido e imagen...
-    # (El resto del código permanece igual)
-
-# El resto del código permanece igual
-
 
     # Extraer el contenido del artículo
     try:
@@ -134,7 +118,7 @@ def extraer_pagina():
         return jsonify(response_data)
 
     except Exception as e:
-        app.logger.error(f"Error al procesar la solicitud: {e}")
+        app.logger.error(f"Error al procesar la solicitud: {e}", exc_info=True)
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
 
     finally:
