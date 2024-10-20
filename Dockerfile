@@ -1,9 +1,6 @@
 FROM python:3.11-slim-buster
 
-# Establecer la variable de entorno para no interactuar con los comandos apt
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Instalar dependencias del sistema necesarias para Playwright
+# Instalar dependencias del sistema
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         wget \
@@ -27,7 +24,7 @@ RUN apt-get update && \
         libx11-xcb1 \
         libxcb1 \
         libx11-6 \
-        && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # Copiar y instalar las dependencias de Python
 COPY requirements.txt .
