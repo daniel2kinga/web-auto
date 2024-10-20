@@ -102,17 +102,16 @@ def interactuar_con_pagina(driver, url):
     texto_extraido = " ".join([element.text for element in contenido])
     app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
 
-    # Extraer la URL de la imagen del artículo basándose en la clase específica del <picture>
+    # Extraer la URL de la imagen del artículo basándose en la clase específica del <img>
+    imagen_url = None
+    imagen_base64 = None
     try:
-        # Usar XPath para una mayor flexibilidad en la selección
-        # Seleccionar el <picture> que contiene las clases "attachment-large" y "size-large"
-        picture_element = driver.find_element(By.XPATH, '//picture[contains(@class, "attachment-large") and contains(@class, "size-large")]')
-        imagen_element = picture_element.find_element(By.TAG_NAME, 'img')
+        # Seleccionar el <img> con alt="Qué es GitHub"
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'img[alt="Qué es GitHub"]')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
         app.logger.error(f"No se pudo encontrar la imagen en el artículo: {e}")
-        imagen_url = None
         # Opcional: Listar todas las imágenes encontradas para depuración
         try:
             imagenes = driver.find_elements(By.CSS_SELECTOR, 'div.entry-content img')
@@ -125,11 +124,10 @@ def interactuar_con_pagina(driver, url):
             app.logger.error(f"Error al listar imágenes para depuración: {ex}")
 
     # Descargar la imagen y codificarla en Base64 (opcional)
-    imagen_base64 = None
     if imagen_url:
         try:
-            # Verificar que la URL no está vacía
-            if imagen_url.strip():
+            # Verificar que la URL no es una Data URI
+            if imagen_url.startswith("http"):
                 imagen_respuesta = requests.get(imagen_url)
                 if imagen_respuesta.status_code == 200:
                     imagen_base64 = base64.b64encode(imagen_respuesta.content).decode('utf-8')
@@ -137,7 +135,7 @@ def interactuar_con_pagina(driver, url):
                 else:
                     app.logger.error(f"No se pudo descargar la imagen, código de estado: {imagen_respuesta.status_code}")
             else:
-                app.logger.error("La URL de la imagen está vacía")
+                app.logger.error("La URL de la imagen no es una URL válida para descargar (Data URI encontrada).")
         except Exception as e:
             app.logger.error(f"Error al descargar la imagen: {e}")
     else:
