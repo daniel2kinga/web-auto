@@ -35,33 +35,34 @@ def interactuar_con_pagina(driver, url):
     app.logger.info(f"Navegando a: {driver.current_url}")
 
     try:
-        # Esperar a que los artículos del blog estén presentes
-        first_article = WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.elementor-post'))
+        # Esperar a que las imágenes estén presentes
+        WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.post img'))
         )
-        app.logger.info("Artículos del blog encontrados")
+        app.logger.info("Imágenes encontradas en la página principal")
 
-        # Obtener el enlace al artículo desde la imagen
-        post_link_element = first_article.find_element(By.CSS_SELECTOR, 'a.elementor-post__thumbnail__link')
-        post_url = post_link_element.get_attribute('href')
-        app.logger.info(f"URL del artículo encontrado: {post_url}")
+        # Encontrar todas las imágenes en los artículos
+        image_elements = driver.find_elements(By.CSS_SELECTOR, 'article.post img')
 
-        # Navegar a la URL del artículo
-        driver.get(post_url)
-        app.logger.info(f"Navegando al artículo: {driver.current_url}")
+        if not image_elements:
+            app.logger.error("No se encontraron imágenes en la página")
+            return None, None, None
 
-    except Exception as e:
-        app.logger.error(f"No se pudo obtener el enlace del artículo: {e}")
-        return None, None, None
+        # Obtener la primera imagen
+        first_image = image_elements[0]
 
-    # Esperar a que la página del artículo cargue
-    try:
+        # Hacer clic en la primera imagen para navegar al artículo
+        first_image.click()
+        app.logger.info("Haciendo clic en la primera imagen para navegar al artículo")
+
+        # Esperar a que la nueva página cargue completamente
         WebDriverWait(driver, 20).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'div.entry-content'))
         )
-        app.logger.info("Página del artículo cargada")
+        app.logger.info(f"Navegando al artículo: {driver.current_url}")
+
     except Exception as e:
-        app.logger.error(f"Error al cargar la página del artículo: {e}")
+        app.logger.error(f"Error al navegar al artículo: {e}")
         return None, None, None
 
     # Extraer el contenido del artículo
@@ -79,7 +80,7 @@ def interactuar_con_pagina(driver, url):
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
-        app.logger.error(f"No se pudo encontrar la imagen: {e}")
+        app.logger.error(f"No se pudo encontrar la imagen en el artículo: {e}")
         imagen_url = None
 
     # Descargar la imagen y codificarla en Base64
@@ -118,7 +119,7 @@ def extraer_pagina():
         texto_extraido, imagen_url, imagen_base64 = resultado
 
         response_data = {
-            "url": url,
+            "url": driver.current_url,  # URL del artículo actual
             "contenido": texto_extraido,
             "imagen_url": imagen_url,
             "imagen_base64": imagen_base64
