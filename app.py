@@ -1,5 +1,7 @@
 import os
 import time
+import base64
+import requests
 from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -42,7 +44,7 @@ def interactuar_con_pagina(driver, url):
 
         if not articles:
             app.logger.error("No se encontraron artículos en la página")
-            return None
+            return None, None, None
 
         # Obtener el primer artículo
         first_article = articles[0]
@@ -59,7 +61,7 @@ def interactuar_con_pagina(driver, url):
 
     except Exception as e:
         app.logger.error(f"No se pudo obtener el enlace del primer post del blog: {e}")
-        return None
+        return None, None, None
 
     # Esperar a que la nueva página cargue completamente
     try:
@@ -69,14 +71,40 @@ def interactuar_con_pagina(driver, url):
         app.logger.info("Página del artículo cargada")
     except Exception as e:
         app.logger.error(f"Error al cargar la página del artículo: {e}")
-        return None
+        return None, None, None
 
     # Extraer el contenido de la página actual
     contenido = driver.find_elements(By.TAG_NAME, "p")
     texto_extraido = " ".join([element.text for element in contenido])
     app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
 
-    return texto_extraido
+    # Extraer la URL de la imagen del artículo
+    try:
+        # Suponiendo que la imagen principal del artículo está dentro de una etiqueta img en el contenido
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img')
+        imagen_url = imagen_element.get_attribute('src')
+        app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
+    except Exception as e:
+        app.logger.error(f"No se pudo encontrar la imagen en el artículo: {e}")
+        imagen_url = None
+
+    # Descargar la imagen y codificarla en Base64 (opcional)
+    imagen_base64 = None
+    if imagen_url:
+        try:
+            imagen_respuesta = requests.get(imagen_url)
+            if imagen_respuesta.status_code == 200:
+                imagen_base64 = base64.b64encode(imagen_respuesta.content).decode('utf-8')
+                app.logger.info("Imagen descargada y codificada en Base64")
+            else:
+                app.logger.error(f"No se pudo descargar la imagen, código de estado: {imagen_respuesta.status_code}")
+        except Exception as e:
+            app.logger.error(f"Error al descargar la imagen: {e}")
+            imagen_base64 = None
+    else:
+        app.logger.error("No se encontró la URL de la imagen")
+
+    return texto_extraido, imagen_url, imagen_base64
 
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
@@ -89,12 +117,20 @@ def extraer_pagina():
         url = data['url']
         app.logger.info(f"Extrayendo contenido de la URL: {url}")
 
-        texto_extraido = interactuar_con_pagina(driver, url)  # Interactuar con la página
+        texto_extraido, imagen_url, imagen_base64 = interactuar_con_pagina(driver, url)  # Interactuar con la página
 
         if texto_extraido is None:
             return jsonify({"error": "No se pudo extraer el texto"}), 500
 
-        return jsonify({"url": url, "contenido": texto_extraido})
+        # Preparar la respuesta con el texto y la imagen
+        response_data = {
+            "url": url,
+            "contenido": texto_extraido,
+            "imagen_url": imagen_url,
+            "imagen_base64": imagen_base64  # Si necesitas la imagen en Base64
+        }
+
+        return jsonify(response_data)
 
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
