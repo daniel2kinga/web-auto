@@ -1,5 +1,4 @@
 import os
-import time
 import base64
 import requests
 from flask import Flask, request, jsonify
@@ -106,8 +105,9 @@ def interactuar_con_pagina(driver, url):
     imagen_url = None
     imagen_base64 = None
     try:
-        # Seleccionar el <img> con alt="Qué es GitHub"
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'img[alt="Qué es GitHub"]')
+        # Seleccionar el <img> con la clase específica 'wp-image-33924'
+        # Nota: By.CLASS_NAME no admite múltiples clases, por lo que solo se usa una clase
+        imagen_element = driver.find_element(By.CLASS_NAME, 'wp-image-33924')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
