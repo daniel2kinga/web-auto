@@ -1,4 +1,4 @@
-import os 
+import os
 import time
 from flask import Flask, request, jsonify
 from selenium import webdriver
@@ -13,6 +13,7 @@ app = Flask(__name__)
 
 def configurar_driver():
     chrome_options = Options()
+    
     chrome_options.add_argument("--headless")  # Ejecutar en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
@@ -20,41 +21,26 @@ def configurar_driver():
     chrome_options.add_argument("--disable-cache")  # Desactivar caché
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--window-size=1920,1080")
-    
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
-def interactuar_con_pagina(driver, url):
-    # Navegar a la nueva URL
+def interactuar_con_pagina(driver):
+    # Navegar a la página principal
+    url = 'https://www.cnet.com'
     driver.get(url)
     app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar la URL actual
 
+    # Esperar a que las entradas del blog estén presentes
     try:
-        # Esperar a que los artículos del blog estén presentes
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column'))
+        # Esperar a que la primera entrada del blog esté presente y sea clicable
+        first_blog_post = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, 'a.assetHed'))
         )
-        app.logger.info("Artículos del blog encontrados")
-        
-        # Encontrar todos los artículos
-        articles = driver.find_elements(By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column')
-        
-        if not articles:
-            app.logger.error("No se encontraron artículos en la página")
-            return None
-        
-        # Obtener el primer artículo
-        first_article = articles[0]
-        
-        # Dentro del primer artículo, encontrar el enlace al post
-        first_post_link = first_article.find_element(By.CSS_SELECTOR, 'a.eael-grid-post-link')
-        app.logger.info(f"Encontrado el enlace del primer post: {first_post_link.get_attribute('href')}")
-        
-        # Hacer clic en el enlace
-        first_post_link.click()
+        app.logger.info("Encontrado el primer post del blog")
+        # Hacer clic en la primera entrada del blog
+        first_blog_post.click()
         app.logger.info("Haciendo clic en el primer post del blog")
-        
     except Exception as e:
         app.logger.error(f"No se pudo encontrar o hacer clic en el primer post del blog: {e}")
         return None
@@ -78,21 +64,15 @@ def interactuar_con_pagina(driver, url):
 
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
-    driver = configurar_driver()
     try:
-        data = request.json
-        if not data or 'url' not in data:
-            return jsonify({"error": "No se proporcionó URL"}), 400
-
-        url = data['url']
-        app.logger.info(f"Extrayendo contenido de la URL: {url}")
-        
-        texto_extraido = interactuar_con_pagina(driver, url)  # Interactuar con la página
+        driver = configurar_driver()
+        texto_extraido = interactuar_con_pagina(driver)  # Interactuar con la página
 
         if texto_extraido is None:
             return jsonify({"error": "No se pudo extraer el texto"}), 500
 
-        return jsonify({"url": url, "contenido": texto_extraido})
+        driver.quit()
+        return jsonify({"contenido": texto_extraido})
 
     except Exception as e:
         app.logger.error(f"Error al procesar la solicitud: {e}")
