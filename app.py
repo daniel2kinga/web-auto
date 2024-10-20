@@ -22,7 +22,9 @@ def configurar_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)...")
+    chrome_options.add_argument("--disable-logging")
+    chrome_options.add_argument("--log-level=3")
+    chrome_options.add_argument("--silent")
     # Especificar la ubicación del binario de Chrome
     chrome_options.binary_location = '/usr/bin/google-chrome'
 
@@ -48,14 +50,17 @@ def interactuar_con_pagina(driver, url):
         app.logger.info("No se encontró banner de cookies")
 
     try:
-        # Esperar a que las imágenes estén presentes
-        WebDriverWait(driver, 20).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'article.post img'))
+        # Esperar a que las imágenes estén visibles
+        WebDriverWait(driver, 30).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, 'div.blog-grid img'))
         )
         app.logger.info("Imágenes encontradas en la página principal")
 
+        # Tomar captura de pantalla
+        driver.save_screenshot('pagina_inicial.png')
+
         # Encontrar todas las imágenes en los artículos
-        image_elements = driver.find_elements(By.CSS_SELECTOR, 'article.post img')
+        image_elements = driver.find_elements(By.CSS_SELECTOR, 'div.blog-grid img')
         app.logger.info(f"Número de imágenes encontradas: {len(image_elements)}")
 
         if not image_elements:
@@ -65,23 +70,22 @@ def interactuar_con_pagina(driver, url):
         # Obtener la primera imagen
         first_image = image_elements[0]
 
-        # Esperar a que la imagen sea clickable
-        WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, 'article.post img'))
-        )
-
         # Hacer clic en la primera imagen
         driver.execute_script("arguments[0].click();", first_image)
         app.logger.info("Haciendo clic en la primera imagen para navegar al artículo")
 
         # Esperar a que la nueva página cargue completamente
-        WebDriverWait(driver, 20).until(
+        WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'div.entry-content'))
         )
         app.logger.info(f"Navegando al artículo: {driver.current_url}")
 
+        # Tomar captura de pantalla de la página del artículo
+        driver.save_screenshot('pagina_articulo.png')
+
     except Exception as e:
         app.logger.error(f"No se pudo obtener el enlace del artículo: {e}", exc_info=True)
+        driver.save_screenshot('error.png')
         return None, None, None
 
     # Añadir retrasos aleatorios
