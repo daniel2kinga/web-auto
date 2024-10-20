@@ -4,6 +4,6 @@ gunicorn
 webdriver-manager
 beautifulsoup4
 lxml
-
+playwright 
 
 
