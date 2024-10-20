@@ -1,5 +1,4 @@
 import os
-import time
 import base64
 import requests
 from flask import Flask, request, jsonify
@@ -22,6 +21,8 @@ def configurar_driver():
     chrome_options.add_argument("--disable-cache")  # Desactivar caché
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--ignore-certificate-errors")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Evitar detección como bot
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -34,7 +35,7 @@ def interactuar_con_pagina(driver, url):
 
     try:
         # Esperar a que los artículos del blog estén presentes
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column'))
         )
         app.logger.info("Artículos del blog encontrados")
@@ -65,8 +66,8 @@ def interactuar_con_pagina(driver, url):
 
     # Esperar a que la nueva página cargue completamente
     try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.TAG_NAME, "p"))
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.entry-content'))
         )
         app.logger.info("Página del artículo cargada")
     except Exception as e:
@@ -74,35 +75,50 @@ def interactuar_con_pagina(driver, url):
         return None, None, None
 
     # Extraer el contenido de la página actual
-    contenido = driver.find_elements(By.TAG_NAME, "p")
-    texto_extraido = " ".join([element.text for element in contenido])
-    app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
+    try:
+        contenido = driver.find_elements(By.TAG_NAME, "p")
+        texto_extraido = " ".join([element.text for element in contenido])
+        app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
+    except Exception as e:
+        app.logger.error(f"Error al extraer el texto del artículo: {e}")
+        texto_extraido = None
 
     # Extraer la URL de la imagen del artículo basándose en el HTML proporcionado
+    imagen_url = None
+    imagen_base64 = None
     try:
-        # Selector CSS más específico:
-        # - Buscar imágenes dentro de 'div.entry-content'
-        # - Filtrar por el atributo 'alt' si es necesario
+        # Selector CSS más específico basado en el atributo alt
         imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img[alt="Qué es GitHub"]')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
-        app.logger.error(f"No se pudo encontrar la imagen en el artículo: {e}")
-        imagen_url = None
+        app.logger.error(f"No se pudo encontrar la imagen específica en el artículo: {e}")
+        # Opcional: Listar todas las imágenes encontradas para depuración
+        try:
+            imagenes = driver.find_elements(By.CSS_SELECTOR, 'div.entry-content img')
+            app.logger.info(f"Total de imágenes encontradas en div.entry-content: {len(imagenes)}")
+            for idx, img in enumerate(imagenes, start=1):
+                alt = img.get_attribute('alt')
+                src = img.get_attribute('src')
+                app.logger.info(f"Imagen {idx}: alt='{alt}', src='{src}'")
+        except Exception as ex:
+            app.logger.error(f"Error al listar imágenes para depuración: {ex}")
 
     # Descargar la imagen y codificarla en Base64 (opcional)
-    imagen_base64 = None
     if imagen_url:
         try:
-            imagen_respuesta = requests.get(imagen_url)
-            if imagen_respuesta.status_code == 200:
-                imagen_base64 = base64.b64encode(imagen_respuesta.content).decode('utf-8')
-                app.logger.info("Imagen descargada y codificada en Base64")
+            # Verificar que la URL no está vacía
+            if imagen_url.strip():
+                imagen_respuesta = requests.get(imagen_url)
+                if imagen_respuesta.status_code == 200:
+                    imagen_base64 = base64.b64encode(imagen_respuesta.content).decode('utf-8')
+                    app.logger.info("Imagen descargada y codificada en Base64")
+                else:
+                    app.logger.error(f"No se pudo descargar la imagen, código de estado: {imagen_respuesta.status_code}")
             else:
-                app.logger.error(f"No se pudo descargar la imagen, código de estado: {imagen_respuesta.status_code}")
+                app.logger.error("La URL de la imagen está vacía")
         except Exception as e:
             app.logger.error(f"Error al descargar la imagen: {e}")
-            imagen_base64 = None
     else:
         app.logger.error("No se encontró la URL de la imagen")
 
@@ -121,7 +137,7 @@ def extraer_pagina():
 
         texto_extraido, imagen_url, imagen_base64 = interactuar_con_pagina(driver, url)  # Interactuar con la página
 
-        if texto_extraido is None:
+        if not texto_extraido:
             return jsonify({"error": "No se pudo extraer el texto"}), 500
 
         # Preparar la respuesta con el texto y la imagen
