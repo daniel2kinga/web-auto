@@ -2,7 +2,7 @@ Flask
 selenium
 gunicorn
 webdriver-manager
-
+beautifulsoup4
 
 
 
