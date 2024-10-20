@@ -78,10 +78,10 @@ def interactuar_con_pagina(driver, url):
     texto_extraido = " ".join([element.text for element in contenido])
     app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
 
-    # Extraer la URL de la imagen del artículo
+    # Extraer la URL de la imagen del artículo basándose en el HTML proporcionado
     try:
-        # Suponiendo que la imagen principal del artículo está dentro de una etiqueta img en el contenido
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img')
+        # Buscar la imagen con el atributo 'src' que coincide con una expresión regular
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'img[src*="wp-content/uploads"]')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
