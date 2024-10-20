@@ -1,12 +1,86 @@
-from flask import Flask, request, jsonify
-from playwright.sync_api import sync_playwright
-import base64
 import os
+import time
+from flask import Flask, request, jsonify
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
 
+def configurar_driver():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")  # Ejecutar en modo headless
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-cache")  # Desactivar caché
+    chrome_options.add_argument("--disable-extensions")
+    chrome_options.add_argument("--window-size=1920,1080")
+
+    service = Service(ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    return driver
+
+def interactuar_con_pagina(driver, url):
+    # Navegar a la URL proporcionada
+    driver.get(url)
+    app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar la URL actual
+
+    try:
+        # Esperar a que los artículos del blog estén presentes
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column'))
+        )
+        app.logger.info("Artículos del blog encontrados")
+
+        # Encontrar todos los artículos
+        articles = driver.find_elements(By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column')
+
+        if not articles:
+            app.logger.error("No se encontraron artículos en la página")
+            return None
+
+        # Obtener el primer artículo
+        first_article = articles[0]
+
+        # Dentro del primer artículo, encontrar el enlace al post
+        post_link_element = first_article.find_element(By.CSS_SELECTOR, 'div.eael-entry-overlay a')
+        post_url = post_link_element.get_attribute('href')
+
+        app.logger.info(f"Enlace al post encontrado: {post_url}")
+
+        # Navegar a la URL del post
+        driver.get(post_url)
+        app.logger.info(f"Navegando al post: {driver.current_url}")
+
+    except Exception as e:
+        app.logger.error(f"No se pudo obtener el enlace del primer post del blog: {e}")
+        return None
+
+    # Esperar a que la nueva página cargue completamente
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.TAG_NAME, "p"))
+        )
+        app.logger.info("Página del artículo cargada")
+    except Exception as e:
+        app.logger.error(f"Error al cargar la página del artículo: {e}")
+        return None
+
+    # Extraer el contenido de la página actual
+    contenido = driver.find_elements(By.TAG_NAME, "p")
+    texto_extraido = " ".join([element.text for element in contenido])
+    app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
+
+    return texto_extraido
+
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
+    driver = configurar_driver()
     try:
         data = request.json
         if not data or 'url' not in data:
@@ -15,67 +89,21 @@ def extraer_pagina():
         url = data['url']
         app.logger.info(f"Extrayendo contenido de la URL: {url}")
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-            page = context.new_page()
+        texto_extraido = interactuar_con_pagina(driver, url)  # Interactuar con la página
 
-            # Navegar a la página principal
-            page.goto(url)
-            app.logger.info(f"Navegando a: {page.url}")
+        if texto_extraido is None:
+            return jsonify({"error": "No se pudo extraer el texto"}), 500
 
-            # Esperar a que el contenido cargue
-            page.wait_for_selector('article.post', timeout=10000)
-
-            # Obtener el enlace al primer artículo
-            first_article = page.query_selector('article.post h2.entry-title a')
-            if not first_article:
-                app.logger.error("No se encontró el enlace al primer artículo")
-                return jsonify({"error": "No se encontró el enlace al primer artículo"}), 500
-
-            post_url = first_article.get_attribute('href')
-            app.logger.info(f"URL del artículo encontrado: {post_url}")
-
-            # Navegar al artículo
-            page.goto(post_url)
-            app.logger.info(f"Navegando al artículo: {page.url}")
-
-            # Esperar a que el contenido del artículo cargue
-            page.wait_for_selector('div.entry-content', timeout=10000)
-
-            # Extraer el contenido del artículo
-            contenido_elements = page.query_selector_all('div.entry-content p')
-            texto_extraido = " ".join([element.inner_text() for element in contenido_elements])
-
-            # Obtener la imagen del artículo
-            imagen_element = page.query_selector('div.entry-content img')
-            if imagen_element:
-                imagen_url = imagen_element.get_attribute('src')
-                # Descargar la imagen y codificarla en Base64
-                imagen_respuesta = requests.get(imagen_url)
-                if imagen_respuesta.status_code == 200:
-                    imagen_base64 = base64.b64encode(imagen_respuesta.content).decode('utf-8')
-                else:
-                    imagen_base64 = None
-                    app.logger.error(f"No se pudo descargar la imagen, código de estado: {imagen_respuesta.status_code}")
-            else:
-                imagen_url = None
-                imagen_base64 = None
-                app.logger.error("No se encontró la imagen en el artículo")
-
-            response_data = {
-                "url": post_url,
-                "contenido": texto_extraido,
-                "imagen_url": imagen_url,
-                "imagen_base64": imagen_base64
-            }
-
-            return jsonify(response_data)
+        return jsonify({"url": url, "contenido": texto_extraido})
 
     except Exception as e:
-        app.logger.error(f"Error al procesar la solicitud: {e}", exc_info=True)
+        app.logger.error(f"Error al procesar la solicitud: {e}")
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
 
+    finally:
+        driver.quit()
+
+# Configurar el servidor para usar el puerto proporcionado por Railway
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port)
