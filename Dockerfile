@@ -1,44 +1,44 @@
-FROM python:3.11-slim-buster
+# Usa una imagen oficial de Python como base
+FROM python:3.11-slim
 
-# Instalar dependencias del sistema
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        wget \
-        libnss3 \
-        libatk1.0-0 \
-        libatk-bridge2.0-0 \
-        libcups2 \
-        libdrm2 \
-        libxkbcommon0 \
-        libxcomposite1 \
-        libxdamage1 \
-        libxext6 \
-        libxfixes3 \
-        libxrandr2 \
-        libgbm1 \
-        libasound2 \
-        libxshmfence1 \
-        fonts-liberation \
-        libssl-dev \
-        libglib2.0-0 \
-        libx11-xcb1 \
-        libxcb1 \
-        libx11-6 \
-    && rm -rf /var/lib/apt/lists/*
+# Instalar dependencias necesarias
+RUN apt-get update && apt-get install -y \
+    wget \
+    curl \
+    unzip \
+    gnupg \
+    apt-transport-https \
+    ca-certificates \
+    libglib2.0-0 \
+    libnss3 \
+    libgconf-2-4 \
+    libfontconfig1 \
+    libxrender1 \
+    libxtst6 \
+    libxi6 \
+    libxss1 \
+    libappindicator1 \
+    xdg-utils
 
-# Copiar y instalar las dependencias de Python
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Instalar Google Chrome versión estable
+RUN wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+    && dpkg -i google-chrome-stable_current_amd64.deb || apt-get -fy install
 
-# Instalar navegadores de Playwright
-RUN playwright install --with-deps
+# Configurar la variable de entorno para Chrome en modo headless
+ENV CHROME_BIN=/usr/bin/google-chrome
+ENV PATH=$PATH:/usr/local/bin/
 
-# Copiar el resto de los archivos de la aplicación
-COPY . /app
+# Crear un directorio de trabajo
 WORKDIR /app
 
-# Exponer el puerto
+# Copiar los archivos del proyecto al contenedor
+COPY . /app
+
+# Instalar las dependencias de Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Exponer el puerto en el que correrá la aplicación Flask
 EXPOSE 5000
 
-# Comando para iniciar la aplicación
-CMD ["python", "app.py"]
+# Ejecutar la aplicación con Gunicorn
+CMD exec gunicorn -w 4 -b :${PORT} app:app
