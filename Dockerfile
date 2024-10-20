@@ -1,56 +1,51 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-buster
+
+# Establecer la variable de entorno para no interactuar con los comandos apt
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Instalar dependencias
-RUN apt-get update && apt-get install -y \
-    wget \
-    unzip \
-    xvfb \
-    libxi6 \
-    libgconf-2-4 \
-    libnss3 \
-    libxss1 \
-    libappindicator1 \
-    libindicator7 \
-    libgtk-3-0 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrandr2 \
-    libxrender1 \
-    libxtst6 \
-    fonts-liberation \
-    libasound2 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdbus-1-3 \
-    libdrm2 \
-    libgbm1 \
-    libnspr4 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libwayland-client0 \
-    libxkbcommon0 \
-    xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y \
+        wget \
+        unzip \
+        libnss3 \
+        libxss1 \
+        libasound2 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libgbm1 \
+        libx11-xcb1 \
+        libxcb1 \
+        libxcomposite1 \
+        libxcursor1 \
+        libxdamage1 \
+        libxext6 \
+        libxfixes3 \
+        libxrandr2 \
+        libxrender1 \
+        libxtst6 \
+        libgtk-3-0 \
+        libxkbcommon0 \
+        xdg-utils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # Instalar Google Chrome
-RUN wget -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get install -y /tmp/chrome.deb \
-    && rm /tmp/chrome.deb
+RUN wget -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
+    apt-get update && \
+    apt-get install -y /tmp/chrome.deb && \
+    rm /tmp/chrome.deb
 
-# Instalar requerimientos de Python
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# Copiar el código de la aplicación
-COPY . /app
+# Configurar el entorno de trabajo
 WORKDIR /app
+
+# Copiar los archivos de la aplicación
+COPY . /app
+
+# Instalar dependencias de Python
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Exponer el puerto
 EXPOSE 5000
