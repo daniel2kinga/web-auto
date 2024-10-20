@@ -1,5 +1,6 @@
 import os
 import time
+import random
 import base64
 import requests
 from flask import Flask, request, jsonify
@@ -15,34 +16,43 @@ app = Flask(__name__)
 
 def configurar_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Ejecutar en modo headless
+    # chrome_options.add_argument("--headless")  # Ejecutar en modo no headless para depuración
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-cache")  # Desactivar caché
+    chrome_options.add_argument("--disable-cache")
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--window-size=1920,1080")
-    # Agregar un User-Agent para evitar ser bloqueado por el sitio web
-    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)...")
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
 def interactuar_con_pagina(driver, url):
-    # Navegar a la URL proporcionada
     driver.get(url)
     app.logger.info(f"Navegando a: {driver.current_url}")
+
+    # Cerrar el banner de cookies si existe
+    try:
+        cookie_banner = driver.find_element(By.ID, 'cookie-law-info-bar')
+        accept_button = cookie_banner.find_element(By.CSS_SELECTOR, 'a.cookie-accept')
+        accept_button.click()
+        app.logger.info("Banner de cookies cerrado")
+        time.sleep(1)
+    except Exception as e:
+        app.logger.info("No se encontró banner de cookies")
 
     try:
         # Esperar a que las imágenes estén presentes
         WebDriverWait(driver, 20).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.post img'))
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'article.post img'))
         )
         app.logger.info("Imágenes encontradas en la página principal")
 
         # Encontrar todas las imágenes en los artículos
         image_elements = driver.find_elements(By.CSS_SELECTOR, 'article.post img')
+        app.logger.info(f"Número de imágenes encontradas: {len(image_elements)}")
 
         if not image_elements:
             app.logger.error("No se encontraron imágenes en la página")
@@ -51,8 +61,13 @@ def interactuar_con_pagina(driver, url):
         # Obtener la primera imagen
         first_image = image_elements[0]
 
-        # Hacer clic en la primera imagen para navegar al artículo
-        first_image.click()
+        # Esperar a que la imagen sea clickable
+        WebDriverWait(driver, 20).until(
+            EC.element_to_be_clickable(first_image)
+        )
+
+        # Hacer clic en la primera imagen
+        driver.execute_script("arguments[0].click();", first_image)
         app.logger.info("Haciendo clic en la primera imagen para navegar al artículo")
 
         # Esperar a que la nueva página cargue completamente
@@ -62,9 +77,13 @@ def interactuar_con_pagina(driver, url):
         app.logger.info(f"Navegando al artículo: {driver.current_url}")
 
     except Exception as e:
-        app.logger.error(f"Error al navegar al artículo: {e}")
+        app.logger.error(f"No se pudo obtener el enlace del artículo: {e}", exc_info=True)
         return None, None, None
 
+    # Añade retrasos aleatorios
+    time.sleep(random.uniform(2, 5))
+
+    # El resto del código permanece igual...
     # Extraer el contenido del artículo
     try:
         contenido_elements = driver.find_elements(By.CSS_SELECTOR, 'div.entry-content p')
@@ -119,7 +138,7 @@ def extraer_pagina():
         texto_extraido, imagen_url, imagen_base64 = resultado
 
         response_data = {
-            "url": driver.current_url,  # URL del artículo actual
+            "url": driver.current_url,
             "contenido": texto_extraido,
             "imagen_url": imagen_url,
             "imagen_base64": imagen_base64
@@ -128,13 +147,12 @@ def extraer_pagina():
         return jsonify(response_data)
 
     except Exception as e:
-        app.logger.error(f"Error al procesar la solicitud: {e}")
+        app.logger.error(f"Error al procesar la solicitud: {e}", exc_info=True)
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
 
     finally:
         driver.quit()
 
-# Configurar el servidor para usar el puerto proporcionado
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
