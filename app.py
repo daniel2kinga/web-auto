@@ -102,11 +102,13 @@ def interactuar_con_pagina(driver, url):
     texto_extraido = " ".join([element.text for element in contenido])
     app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
 
-    # Extraer la URL de la imagen del artículo basándose en la clase específica
+    # Extraer la URL de la imagen del artículo basándose en la clase específica del <picture>
     try:
-        # Selector CSS más específico basado en la clase del elemento
-        # En el HTML proporcionado, la clase es "entered lazyloaded"
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'img.entered.lazyloaded')
+        # Seleccionar el <picture> con la clase específica y luego el <img> dentro de él
+        # En el HTML proporcionado, la clase es "attachment-large size-large wp-image-33924"
+        # Asegúrate de que esta clase es consistente para la imagen que deseas extraer
+        picture_element = driver.find_element(By.CSS_SELECTOR, 'picture.attachment-large.size-large.wp-image-33924')
+        imagen_element = picture_element.find_element(By.TAG_NAME, 'img')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
@@ -114,8 +116,8 @@ def interactuar_con_pagina(driver, url):
         imagen_url = None
         # Opcional: Listar todas las imágenes encontradas para depuración
         try:
-            imagenes = driver.find_elements(By.CSS_SELECTOR, 'img')
-            app.logger.info(f"Total de imágenes encontradas en la página: {len(imagenes)}")
+            imagenes = driver.find_elements(By.CSS_SELECTOR, 'div.entry-content img')
+            app.logger.info(f"Total de imágenes encontradas en div.entry-content: {len(imagenes)}")
             for idx, img in enumerate(imagenes, start=1):
                 alt = img.get_attribute('alt')
                 src = img.get_attribute('src')
