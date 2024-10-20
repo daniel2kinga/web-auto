@@ -16,16 +16,20 @@ app = Flask(__name__)
 
 def configurar_driver():
     chrome_options = Options()
-    # chrome_options.add_argument("--headless")  # Ejecutar en modo no headless para depuración
+    chrome_options.add_argument("--headless")  # Ejecutar en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-cache")
     chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)...")
+    # Especificar la ubicación del binario de Chrome
+    chrome_options.binary_location = '/usr/bin/google-chrome'
 
-    service = Service(ChromeDriverManager().install())
+    # Instalar la versión adecuada de ChromeDriver
+    chrome_driver_path = ChromeDriverManager().install()
+    service = Service(chrome_driver_path)
+
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
@@ -63,7 +67,7 @@ def interactuar_con_pagina(driver, url):
 
         # Esperar a que la imagen sea clickable
         WebDriverWait(driver, 20).until(
-            EC.element_to_be_clickable(first_image)
+            EC.element_to_be_clickable((By.CSS_SELECTOR, 'article.post img'))
         )
 
         # Hacer clic en la primera imagen
@@ -80,10 +84,9 @@ def interactuar_con_pagina(driver, url):
         app.logger.error(f"No se pudo obtener el enlace del artículo: {e}", exc_info=True)
         return None, None, None
 
-    # Añade retrasos aleatorios
+    # Añadir retrasos aleatorios
     time.sleep(random.uniform(2, 5))
 
-    # El resto del código permanece igual...
     # Extraer el contenido del artículo
     try:
         contenido_elements = driver.find_elements(By.CSS_SELECTOR, 'div.entry-content p')
