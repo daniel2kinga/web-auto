@@ -23,9 +23,23 @@ def configurar_driver():
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Evitar detección como bot
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) " 
+                                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
+
+    # Evitar la detección de Selenium
+    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+        "source": """
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            })
+        """
+    })
+
     return driver
 
 def interactuar_con_pagina(driver, url):
@@ -62,6 +76,10 @@ def interactuar_con_pagina(driver, url):
 
     except Exception as e:
         app.logger.error(f"No se pudo obtener el enlace del primer post del blog: {e}")
+        # Capturar captura de pantalla para depuración
+        screenshot_path = "error_loading_article.png"
+        driver.save_screenshot(screenshot_path)
+        app.logger.error(f"Captura de pantalla guardada en {screenshot_path}")
         return None, None, None
 
     # Esperar a que la nueva página cargue completamente
@@ -72,6 +90,10 @@ def interactuar_con_pagina(driver, url):
         app.logger.info("Página del artículo cargada")
     except Exception as e:
         app.logger.error(f"Error al cargar la página del artículo: {e}")
+        # Capturar captura de pantalla para depuración
+        screenshot_path = "error_loading_article_content.png"
+        driver.save_screenshot(screenshot_path)
+        app.logger.error(f"Captura de pantalla guardada en {screenshot_path}")
         return None, None, None
 
     # Extraer el contenido de la página actual
@@ -83,12 +105,14 @@ def interactuar_con_pagina(driver, url):
         app.logger.error(f"Error al extraer el texto del artículo: {e}")
         texto_extraido = None
 
-    # Extraer la URL de la imagen del artículo basándose en el HTML proporcionado
+    # Extraer la URL de la imagen del artículo basándose en la clase específica
     imagen_url = None
     imagen_base64 = None
     try:
-        # Selector CSS más específico basado en el atributo alt
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img[alt="Qué es GitHub"]')
+        # Selector CSS más específico basado en la clase del elemento
+        # Asumiendo que la imagen deseada tiene una clase específica, por ejemplo, "desired-image-class"
+        # Reemplaza "desired-image-class" con la clase real de la imagen que deseas extraer
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img.entered.lazyloaded')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
@@ -151,7 +175,9 @@ def extraer_pagina():
         return jsonify(response_data)
 
     except Exception as e:
-        app.logger.error(f"Error al procesar la solicitud: {e}")
+        import traceback
+        error_trace = traceback.format_exc()
+        app.logger.error(f"Error al procesar la solicitud: {e}\n{error_trace}")
         return jsonify({"error": "Error interno del servidor", "details": str(e)}), 500
 
     finally:
