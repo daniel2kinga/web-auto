@@ -50,7 +50,7 @@ def interactuar_con_pagina(driver, url):
 
     try:
         # Esperar a que los artículos del blog estén presentes
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column'))
         )
         app.logger.info("Artículos del blog encontrados")
@@ -85,7 +85,7 @@ def interactuar_con_pagina(driver, url):
 
     # Esperar a que la nueva página cargue completamente
     try:
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.TAG_NAME, "p"))
         )
         app.logger.info("Página del artículo cargada")
@@ -104,10 +104,9 @@ def interactuar_con_pagina(driver, url):
 
     # Extraer la URL de la imagen del artículo basándose en la clase específica del <picture>
     try:
-        # Seleccionar el <picture> con la clase específica y luego el <img> dentro de él
-        # En el HTML proporcionado, la clase es "attachment-large size-large wp-image-33924"
-        # Asegúrate de que esta clase es consistente para la imagen que deseas extraer
-        picture_element = driver.find_element(By.CSS_SELECTOR, 'picture.attachment-large.size-large.wp-image-33924')
+        # Usar XPath para una mayor flexibilidad en la selección
+        # Seleccionar el <picture> que contiene las clases "attachment-large" y "size-large"
+        picture_element = driver.find_element(By.XPATH, '//picture[contains(@class, "attachment-large") and contains(@class, "size-large")]')
         imagen_element = picture_element.find_element(By.TAG_NAME, 'img')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
