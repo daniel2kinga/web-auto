@@ -1,6 +1,7 @@
 import os
 import base64
 import requests
+import time
 from flask import Flask, request, jsonify
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -25,8 +26,10 @@ def configurar_driver():
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Evitar detección como bot
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
-    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36")
+    chrome_options.add_argument(
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+    )
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
@@ -104,14 +107,38 @@ def interactuar_con_pagina(driver, url):
     # Extraer la URL de la imagen del artículo basándose en la clase específica del <picture>
     imagen_url = None
     imagen_base64 = None
-    try:
-        # Seleccionar el <picture> con la clase específica 'wp-image-33924'
-        picture_element = driver.find_element(By.CLASS_NAME, 'wp-image-33924')
-        img_element = picture_element.find_element(By.TAG_NAME, 'img')
-        imagen_url = img_element.get_attribute('src')
-        app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
-    except Exception as e:
-        app.logger.error(f"No se pudo encontrar la imagen en el artículo: {e}")
+    max_retries = 5
+    retry_delay = 2  # segundos
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Seleccionar el <picture> con la clase específica 'wp-image-33924'
+            picture_element = driver.find_element(By.CLASS_NAME, 'wp-image-33924')
+            img_element = picture_element.find_element(By.TAG_NAME, 'img')
+            current_src = img_element.get_attribute('src')
+            app.logger.info(f"Intento {attempt}: src del <img> encontrado: {current_src}")
+
+            if current_src.startswith("http"):
+                imagen_url = current_src
+                app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
+                break
+            else:
+                app.logger.warning(f"El src encontrado no es una URL válida (Data URI): {current_src}")
+                if attempt < max_retries:
+                    app.logger.info(f"Reintentando en {retry_delay} segundos...")
+                    time.sleep(retry_delay)
+                else:
+                    app.logger.error("Máximo número de reintentos alcanzado. No se encontró una URL válida para la imagen.")
+        except Exception as e:
+            app.logger.error(f"Error al intentar encontrar la imagen con clase 'wp-image-33924': {e}")
+            if attempt < max_retries:
+                app.logger.info(f"Reintentando en {retry_delay} segundos...")
+                time.sleep(retry_delay)
+            else:
+                app.logger.error("Máximo número de reintentos alcanzado. No se pudo encontrar la imagen.")
+                return texto_extraido, None, None
+
+    if not imagen_url:
         # Opcional: Listar todas las imágenes encontradas para depuración
         try:
             imagenes = driver.find_elements(By.CSS_SELECTOR, 'div.entry-content img')
@@ -126,20 +153,16 @@ def interactuar_con_pagina(driver, url):
     # Descargar la imagen y codificarla en Base64 (opcional)
     if imagen_url:
         try:
-            # Verificar que la URL no es una Data URI
-            if imagen_url.startswith("http"):
-                imagen_respuesta = requests.get(imagen_url)
-                if imagen_respuesta.status_code == 200:
-                    imagen_base64 = base64.b64encode(imagen_respuesta.content).decode('utf-8')
-                    app.logger.info("Imagen descargada y codificada en Base64")
-                else:
-                    app.logger.error(f"No se pudo descargar la imagen, código de estado: {imagen_respuesta.status_code}")
+            imagen_respuesta = requests.get(imagen_url)
+            if imagen_respuesta.status_code == 200:
+                imagen_base64 = base64.b64encode(imagen_respuesta.content).decode('utf-8')
+                app.logger.info("Imagen descargada y codificada en Base64")
             else:
-                app.logger.error("La URL de la imagen no es una URL válida para descargar (Data URI encontrada).")
+                app.logger.error(f"No se pudo descargar la imagen, código de estado: {imagen_respuesta.status_code}")
         except Exception as e:
             app.logger.error(f"Error al descargar la imagen: {e}")
     else:
-        app.logger.error("No se encontró la URL de la imagen")
+        app.logger.error("No se encontró una URL válida para la imagen")
 
     return texto_extraido, imagen_url, imagen_base64
 
