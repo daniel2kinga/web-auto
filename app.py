@@ -80,8 +80,10 @@ def interactuar_con_pagina(driver, url):
 
     # Extraer la URL de la imagen del artículo basándose en el HTML proporcionado
     try:
-        # Buscar la imagen con el atributo 'src' que coincide con una expresión regular
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'img[src*="wp-content/uploads"]')
+        # Selector CSS más específico:
+        # - Buscar imágenes dentro de 'div.entry-content'
+        # - Filtrar por el atributo 'alt' si es necesario
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img[alt="Qué es GitHub"]')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
