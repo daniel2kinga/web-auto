@@ -101,14 +101,14 @@ def interactuar_con_pagina(driver, url):
     texto_extraido = " ".join([element.text for element in contenido])
     app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
 
-    # Extraer la URL de la imagen del artículo basándose en la clase específica del <img>
+    # Extraer la URL de la imagen del artículo basándose en la clase específica del <picture>
     imagen_url = None
     imagen_base64 = None
     try:
-        # Seleccionar el <img> con la clase específica 'wp-image-33924'
-        # Nota: By.CLASS_NAME no admite múltiples clases, por lo que solo se usa una clase
-        imagen_element = driver.find_element(By.CLASS_NAME, 'wp-image-33924')
-        imagen_url = imagen_element.get_attribute('src')
+        # Seleccionar el <picture> con la clase específica 'wp-image-33924'
+        picture_element = driver.find_element(By.CLASS_NAME, 'wp-image-33924')
+        img_element = picture_element.find_element(By.TAG_NAME, 'img')
+        imagen_url = img_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
         app.logger.error(f"No se pudo encontrar la imagen en el artículo: {e}")
