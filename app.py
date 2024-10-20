@@ -123,12 +123,19 @@ def interactuar_con_pagina(driver, url):
                 app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
                 break
             else:
-                app.logger.warning(f"El src encontrado no es una URL válida (Data URI): {current_src}")
-                if attempt < max_retries:
-                    app.logger.info(f"Reintentando en {retry_delay} segundos...")
-                    time.sleep(retry_delay)
+                # Intentar obtener 'data-lazy-src' si 'src' es una Data URI
+                data_lazy_src = img_element.get_attribute('data-lazy-src')
+                if data_lazy_src and data_lazy_src.startswith("http"):
+                    imagen_url = data_lazy_src
+                    app.logger.info(f"URL de la imagen obtenida de 'data-lazy-src': {imagen_url}")
+                    break
                 else:
-                    app.logger.error("Máximo número de reintentos alcanzado. No se encontró una URL válida para la imagen.")
+                    app.logger.warning(f"El src encontrado no es una URL válida (Data URI): {current_src}")
+                    if attempt < max_retries:
+                        app.logger.info(f"Reintentando en {retry_delay} segundos...")
+                        time.sleep(retry_delay)
+                    else:
+                        app.logger.error("Máximo número de reintentos alcanzado. No se encontró una URL válida para la imagen.")
         except Exception as e:
             app.logger.error(f"Error al intentar encontrar la imagen con clase 'wp-image-33924': {e}")
             if attempt < max_retries:
