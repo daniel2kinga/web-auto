@@ -33,6 +33,7 @@ MESES = {
 
 def configurar_driver():
     chrome_options = Options()
+    # Puedes comentar la siguiente línea para ver el navegador en acción
     chrome_options.add_argument("--headless")  # Ejecutar en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
@@ -169,20 +170,37 @@ def interactuar_con_pagina(driver, url):
 
     # Desplazar hasta el final de la página para cargar todas las imágenes
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(3)  # Esperar a que las imágenes se carguen
+    time.sleep(5)  # Aumentamos el tiempo de espera para asegurar que las imágenes carguen
 
-    # Extraer la URL de la imagen del artículo
+    # Listar todas las imágenes para identificar el selector correcto
+    try:
+        imagenes = driver.find_elements(By.TAG_NAME, 'img')
+        app.logger.info(f"Total de imágenes encontradas: {len(imagenes)}")
+        for idx, img in enumerate(imagenes, start=1):
+            src = img.get_attribute('src')
+            alt = img.get_attribute('alt')
+            class_attr = img.get_attribute('class')
+            app.logger.info(f"Imagen {idx}: src='{src}', alt='{alt}', class='{class_attr}'")
+    except Exception as e:
+        app.logger.error(f"Error al listar imágenes: {e}")
+
+    # Intentar encontrar la imagen principal
     imagen_url = None
     imagen_base64 = None
 
     try:
-        # Actualizar el selector para encontrar la imagen principal
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img')
+        # Ajustar el selector según las clases encontradas
+        # Por ejemplo, si la imagen tiene la clase 'attachment-full size-full'
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'img.attachment-full.size-full')
+
+        # Verificar atributos de la imagen
         imagen_url = imagen_element.get_attribute('src')
+        if not imagen_url or not imagen_url.startswith('http'):
+            imagen_url = imagen_element.get_attribute('data-src') or imagen_element.get_attribute('data-lazy-src')
+
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
         app.logger.error(f"No se pudo encontrar la imagen en la entrada: {e}")
-        # Capturar captura de pantalla para depuración
         driver.save_screenshot("error_finding_image.png")
         imagen_url = None
 
