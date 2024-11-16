@@ -7,6 +7,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
@@ -182,6 +183,12 @@ def interactuar_con_pagina(driver, url):
 
             # Asumimos que la primera imagen relevante es la principal
             img_element = img_elements[0]
+
+            # Desplazar hasta la imagen para forzar la carga
+            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", img_element)
+            app.logger.info("Desplazando hasta la imagen para forzar la carga")
+            time.sleep(2)  # Esperar un momento para que la imagen cargue
+
             current_src = img_element.get_attribute('src')
             app.logger.info(f"Intento {attempt}: src del <img> encontrado: {current_src}")
 
