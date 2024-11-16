@@ -10,8 +10,25 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
+from datetime import datetime
 
 app = Flask(__name__)
+
+# Diccionario para mapear los nombres de meses en español a números
+MESES = {
+    'enero': 1,
+    'febrero': 2,
+    'marzo': 3,
+    'abril': 4,
+    'mayo': 5,
+    'junio': 6,
+    'julio': 7,
+    'agosto': 8,
+    'septiembre': 9,
+    'octubre': 10,
+    'noviembre': 11,
+    'diciembre': 12
+}
 
 def configurar_driver():
     chrome_options = Options()
@@ -45,66 +62,112 @@ def configurar_driver():
 
     return driver
 
+def parsear_fecha(fecha_str):
+    """
+    Convierte una cadena de fecha en español a un objeto datetime.
+    Ejemplo de entrada: "31 octubre, 2024"
+    """
+    try:
+        partes = fecha_str.lower().replace(',', '').split()
+        if len(partes) != 3:
+            raise ValueError("Formato de fecha incorrecto")
+        dia = int(partes[0])
+        mes = MESES.get(partes[1])
+        anio = int(partes[2])
+        if not mes:
+            raise ValueError(f"Mes desconocido: {partes[1]}")
+        return datetime(anio, mes, dia)
+    except Exception as e:
+        app.logger.error(f"Error al parsear la fecha '{fecha_str}': {e}")
+        return None
+
 def interactuar_con_pagina(driver, url):
     # Navegar a la URL proporcionada
     driver.get(url)
     app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar la URL actual
 
     try:
-        # Esperar a que los artículos del blog estén presentes
+        # Esperar a que las entradas del blog estén presentes
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column'))
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.eael-entry-wrapper'))
         )
-        app.logger.info("Artículos del blog encontrados")
+        app.logger.info("Entradas del blog encontradas")
 
-        # Encontrar todos los artículos
-        articles = driver.find_elements(By.CSS_SELECTOR, 'article.eael-grid-post.eael-post-grid-column')
+        # Encontrar todas las entradas del blog
+        entradas = driver.find_elements(By.CSS_SELECTOR, 'div.eael-entry-wrapper')
 
-        if not articles:
-            app.logger.error("No se encontraron artículos en la página")
+        if not entradas:
+            app.logger.error("No se encontraron entradas en la página")
             return None, None, None
 
-        # Obtener el primer artículo
-        first_article = articles[0]
+        entradas_con_fecha = []
 
-        # Dentro del primer artículo, encontrar el enlace al post
-        post_link_element = first_article.find_element(By.CSS_SELECTOR, 'div.eael-entry-overlay a')
-        post_url = post_link_element.get_attribute('href')
+        for entrada in entradas:
+            try:
+                # Encontrar el elemento <time> dentro de la entrada
+                time_element = entrada.find_element(By.CSS_SELECTOR, 'time')
+                fecha_str = time_element.get_attribute('datetime')  # Ejemplo: "31 octubre, 2024"
+                fecha = parsear_fecha(fecha_str)
+                if fecha:
+                    # Obtener el enlace a la entrada
+                    enlace_element = entrada.find_element(By.CSS_SELECTOR, 'a.eael-grid-post-link')
+                    enlace_url = enlace_element.get_attribute('href')
+                    entradas_con_fecha.append({
+                        'fecha': fecha,
+                        'url': enlace_url
+                    })
+                    app.logger.info(f"Entrada encontrada: Fecha={fecha_str}, URL={enlace_url}")
+                else:
+                    app.logger.warning(f"No se pudo parsear la fecha: {fecha_str}")
+            except Exception as e:
+                app.logger.error(f"Error al procesar una entrada del blog: {e}")
+                continue
 
-        app.logger.info(f"Enlace al post encontrado: {post_url}")
+        if not entradas_con_fecha:
+            app.logger.error("No se encontraron entradas con fechas válidas")
+            return None, None, None
 
-        # Navegar a la URL del post
-        driver.get(post_url)
-        app.logger.info(f"Navegando al post: {driver.current_url}")
+        # Ordenar las entradas por fecha descendente y seleccionar la más reciente
+        entradas_con_fecha.sort(key=lambda x: x['fecha'], reverse=True)
+        entrada_mas_reciente = entradas_con_fecha[0]
+        app.logger.info(f"Entrada más reciente: Fecha={entrada_mas_reciente['fecha'].strftime('%Y-%m-%d')}, URL={entrada_mas_reciente['url']}")
+
+        # Navegar a la URL de la entrada más reciente
+        driver.get(entrada_mas_reciente['url'])
+        app.logger.info(f"Navegando a la entrada más reciente: {driver.current_url}")
 
     except Exception as e:
-        app.logger.error(f"No se pudo obtener el enlace del primer post del blog: {e}")
+        app.logger.error(f"No se pudo procesar las entradas del blog: {e}")
         # Capturar captura de pantalla para depuración
-        screenshot_path = "error_loading_article.png"
+        screenshot_path = "error_processing_blog_entries.png"
         driver.save_screenshot(screenshot_path)
         app.logger.error(f"Captura de pantalla guardada en {screenshot_path}")
         return None, None, None
 
-    # Esperar a que la nueva página cargue completamente
+    # Esperar a que la página de la entrada cargue completamente
     try:
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.TAG_NAME, "p"))
+            EC.presence_of_element_located((By.TAG_NAME, "img"))
         )
-        app.logger.info("Página del artículo cargada")
+        app.logger.info("Página de la entrada cargada completamente")
     except Exception as e:
-        app.logger.error(f"Error al cargar la página del artículo: {e}")
+        app.logger.error(f"Error al cargar la página de la entrada: {e}")
         # Capturar captura de pantalla para depuración
-        screenshot_path = "error_loading_article_content.png"
+        screenshot_path = "error_loading_entry_page.png"
         driver.save_screenshot(screenshot_path)
         app.logger.error(f"Captura de pantalla guardada en {screenshot_path}")
         return None, None, None
 
     # Extraer el contenido de la página actual
-    contenido = driver.find_elements(By.TAG_NAME, "p")
-    texto_extraido = " ".join([element.text for element in contenido])
-    app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
+    try:
+        contenido = driver.find_elements(By.TAG_NAME, "p")
+        texto_extraido = " ".join([element.text for element in contenido])
+        app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
+    except Exception as e:
+        app.logger.error(f"Error al extraer el contenido de la página: {e}")
+        texto_extraido = ""
 
-    # Extraer la URL de la imagen del artículo basándose en la clase específica del <picture>
+    # Extraer la URL de la imagen del artículo
     imagen_url = None
     imagen_base64 = None
     max_retries = 5
@@ -112,9 +175,13 @@ def interactuar_con_pagina(driver, url):
 
     for attempt in range(1, max_retries + 1):
         try:
-            # Seleccionar el <picture> con la clase específica 'wp-image-33924'
-            picture_element = driver.find_element(By.CLASS_NAME, 'wp-image-33924')
-            img_element = picture_element.find_element(By.TAG_NAME, 'img')
+            # Seleccionar todas las imágenes en la entrada
+            img_elements = driver.find_elements(By.TAG_NAME, 'img')
+            if not img_elements:
+                raise Exception("No se encontraron elementos <img> en la entrada")
+
+            # Asumimos que la primera imagen relevante es la principal
+            img_element = img_elements[0]
             current_src = img_element.get_attribute('src')
             app.logger.info(f"Intento {attempt}: src del <img> encontrado: {current_src}")
 
@@ -134,22 +201,19 @@ def interactuar_con_pagina(driver, url):
                     if attempt < max_retries:
                         app.logger.info(f"Reintentando en {retry_delay} segundos...")
                         time.sleep(retry_delay)
-                    else:
-                        app.logger.error("Máximo número de reintentos alcanzado. No se encontró una URL válida para la imagen.")
         except Exception as e:
-            app.logger.error(f"Error al intentar encontrar la imagen con clase 'wp-image-33924': {e}")
+            app.logger.error(f"Error al intentar encontrar la imagen en la entrada: {e}")
             if attempt < max_retries:
                 app.logger.info(f"Reintentando en {retry_delay} segundos...")
                 time.sleep(retry_delay)
             else:
-                app.logger.error("Máximo número de reintentos alcanzado. No se pudo encontrar la imagen.")
-                return texto_extraido, None, None
+                app.logger.error("Máximo número de reintentos alcanzado. No se encontró una URL válida para la imagen.")
 
     if not imagen_url:
         # Opcional: Listar todas las imágenes encontradas para depuración
         try:
-            imagenes = driver.find_elements(By.CSS_SELECTOR, 'div.entry-content img')
-            app.logger.info(f"Total de imágenes encontradas en div.entry-content: {len(imagenes)}")
+            imagenes = driver.find_elements(By.TAG_NAME, 'img')
+            app.logger.info(f"Total de imágenes encontradas en la entrada: {len(imagenes)}")
             for idx, img in enumerate(imagenes, start=1):
                 alt = img.get_attribute('alt')
                 src = img.get_attribute('src')
