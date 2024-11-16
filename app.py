@@ -7,7 +7,6 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
@@ -33,7 +32,6 @@ MESES = {
 
 def configurar_driver():
     chrome_options = Options()
-    # Puedes comentar la siguiente línea para ver el navegador en acción
     chrome_options.add_argument("--headless")  # Ejecutar en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
@@ -72,11 +70,16 @@ def parsear_fecha(fecha_str):
     """
     try:
         partes = fecha_str.lower().replace(',', '').split()
-        if len(partes) != 3:
+        if len(partes) == 2:
+            dia = int(partes[0])
+            mes = MESES.get(partes[1])
+            anio = datetime.now().year  # Asumimos el año actual si no está en el string
+        elif len(partes) == 3:
+            dia = int(partes[0])
+            mes = MESES.get(partes[1])
+            anio = int(partes[2])
+        else:
             raise ValueError("Formato de fecha incorrecto")
-        dia = int(partes[0])
-        mes = MESES.get(partes[1])
-        anio = int(partes[2])
         if not mes:
             raise ValueError(f"Mes desconocido: {partes[1]}")
         return datetime(anio, mes, dia)
@@ -92,12 +95,12 @@ def interactuar_con_pagina(driver, url):
     try:
         # Esperar a que las entradas del blog estén presentes
         WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.eael-entry-wrapper'))
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.eael-grid-post-holder-inner'))
         )
         app.logger.info("Entradas del blog encontradas")
 
         # Encontrar todas las entradas del blog
-        entradas = driver.find_elements(By.CSS_SELECTOR, 'div.eael-entry-wrapper')
+        entradas = driver.find_elements(By.CSS_SELECTOR, 'div.eael-grid-post-holder-inner')
 
         if not entradas:
             app.logger.error("No se encontraron entradas en la página")
@@ -109,7 +112,7 @@ def interactuar_con_pagina(driver, url):
             try:
                 # Encontrar el elemento <time> dentro de la entrada
                 time_element = entrada.find_element(By.CSS_SELECTOR, 'time')
-                fecha_str = time_element.get_attribute('datetime')
+                fecha_str = time_element.text.strip()
                 fecha = parsear_fecha(fecha_str)
                 if fecha:
                     # Obtener el enlace a la entrada
@@ -117,7 +120,8 @@ def interactuar_con_pagina(driver, url):
                     enlace_url = enlace_element.get_attribute('href')
                     entradas_con_fecha.append({
                         'fecha': fecha,
-                        'url': enlace_url
+                        'url': enlace_url,
+                        'entrada_element': entrada  # Guardamos el elemento para extraer la imagen después
                     })
                     app.logger.info(f"Entrada encontrada: Fecha={fecha_str}, URL={enlace_url}")
                 else:
@@ -134,6 +138,15 @@ def interactuar_con_pagina(driver, url):
         entradas_con_fecha.sort(key=lambda x: x['fecha'], reverse=True)
         entrada_mas_reciente = entradas_con_fecha[0]
         app.logger.info(f"Entrada más reciente: Fecha={entrada_mas_reciente['fecha'].strftime('%Y-%m-%d')}, URL={entrada_mas_reciente['url']}")
+
+        # Extraer la imagen de la entrada más reciente desde la página principal
+        try:
+            imagen_element = entrada_mas_reciente['entrada_element'].find_element(By.CSS_SELECTOR, 'img')
+            imagen_url = imagen_element.get_attribute('src')
+            app.logger.info(f"URL de la imagen encontrada en la página principal: {imagen_url}")
+        except Exception as e:
+            app.logger.error(f"No se pudo encontrar la imagen en la entrada más reciente: {e}")
+            imagen_url = None
 
         # Navegar a la URL de la entrada más reciente
         driver.get(entrada_mas_reciente['url'])
@@ -168,43 +181,18 @@ def interactuar_con_pagina(driver, url):
         app.logger.error(f"Error al extraer el contenido de la página: {e}")
         texto_extraido = ""
 
-    # Desplazar hasta el final de la página para cargar todas las imágenes
-    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-    time.sleep(5)  # Aumentamos el tiempo de espera para asegurar que las imágenes carguen
-
-    # Listar todas las imágenes para identificar el selector correcto
-    try:
-        imagenes = driver.find_elements(By.TAG_NAME, 'img')
-        app.logger.info(f"Total de imágenes encontradas: {len(imagenes)}")
-        for idx, img in enumerate(imagenes, start=1):
-            src = img.get_attribute('src')
-            alt = img.get_attribute('alt')
-            class_attr = img.get_attribute('class')
-            app.logger.info(f"Imagen {idx}: src='{src}', alt='{alt}', class='{class_attr}'")
-    except Exception as e:
-        app.logger.error(f"Error al listar imágenes: {e}")
-
-    # Intentar encontrar la imagen principal
-    imagen_url = None
-    imagen_base64 = None
-
-    try:
-        # Ajustar el selector según las clases encontradas
-        # Por ejemplo, si la imagen tiene la clase 'attachment-full size-full'
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'img.attachment-full.size-full')
-
-        # Verificar atributos de la imagen
-        imagen_url = imagen_element.get_attribute('src')
-        if not imagen_url or not imagen_url.startswith('http'):
-            imagen_url = imagen_element.get_attribute('data-src') or imagen_element.get_attribute('data-lazy-src')
-
-        app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
-    except Exception as e:
-        app.logger.error(f"No se pudo encontrar la imagen en la entrada: {e}")
-        driver.save_screenshot("error_finding_image.png")
-        imagen_url = None
+    # Si no se obtuvo la imagen antes, intentar extraerla de la página de la entrada
+    if not imagen_url:
+        try:
+            imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img')
+            imagen_url = imagen_element.get_attribute('src')
+            app.logger.info(f"URL de la imagen encontrada en la entrada: {imagen_url}")
+        except Exception as e:
+            app.logger.error(f"No se pudo encontrar la imagen en la entrada: {e}")
+            imagen_url = None
 
     # Descargar la imagen y codificarla en Base64
+    imagen_base64 = None
     if imagen_url and imagen_url.startswith("http"):
         try:
             imagen_respuesta = requests.get(imagen_url)
@@ -255,7 +243,7 @@ def extraer_pagina():
     finally:
         driver.quit()
 
-# Configurar el servidor para usar el puerto proporcionado por Railway
+# Ejecutar la aplicación
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
