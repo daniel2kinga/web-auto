@@ -36,12 +36,14 @@ def configurar_driver():
     chrome_options.add_argument("--headless")  # Ejecutar en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-cache")  # Desactivar caché
-    chrome_options.add_argument("--disable-extensions")
+    # Aseguramos que las imágenes se carguen
+    chrome_options.add_argument('--blink-settings=imagesEnabled=true')
     chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-cache")
+    chrome_options.add_argument("--disable-extensions")
     chrome_options.add_argument("--ignore-certificate-errors")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Evitar detección como bot
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
     chrome_options.add_argument(
@@ -85,7 +87,7 @@ def parsear_fecha(fecha_str):
 def interactuar_con_pagina(driver, url):
     # Navegar a la URL proporcionada
     driver.get(url)
-    app.logger.info(f"Navegando a: {driver.current_url}")  # Verificar la URL actual
+    app.logger.info(f"Navegando a: {driver.current_url}")
 
     try:
         # Esperar a que las entradas del blog estén presentes
@@ -107,7 +109,7 @@ def interactuar_con_pagina(driver, url):
             try:
                 # Encontrar el elemento <time> dentro de la entrada
                 time_element = entrada.find_element(By.CSS_SELECTOR, 'time')
-                fecha_str = time_element.get_attribute('datetime')  # Ejemplo: "31 octubre, 2024"
+                fecha_str = time_element.get_attribute('datetime')
                 fecha = parsear_fecha(fecha_str)
                 if fecha:
                     # Obtener el enlace a la entrada
@@ -139,7 +141,6 @@ def interactuar_con_pagina(driver, url):
 
     except Exception as e:
         app.logger.error(f"No se pudo procesar las entradas del blog: {e}")
-        # Capturar captura de pantalla para depuración
         screenshot_path = "error_processing_blog_entries.png"
         driver.save_screenshot(screenshot_path)
         app.logger.error(f"Captura de pantalla guardada en {screenshot_path}")
@@ -153,7 +154,6 @@ def interactuar_con_pagina(driver, url):
         app.logger.info("Página de la entrada cargada completamente")
     except Exception as e:
         app.logger.error(f"Error al cargar la página de la entrada: {e}")
-        # Capturar captura de pantalla para depuración
         screenshot_path = "error_loading_entry_page.png"
         driver.save_screenshot(screenshot_path)
         app.logger.error(f"Captura de pantalla guardada en {screenshot_path}")
@@ -163,73 +163,30 @@ def interactuar_con_pagina(driver, url):
     try:
         contenido = driver.find_elements(By.TAG_NAME, "p")
         texto_extraido = " ".join([element.text for element in contenido])
-        app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")  # Mostrar solo los primeros 500 caracteres
+        app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")
     except Exception as e:
         app.logger.error(f"Error al extraer el contenido de la página: {e}")
         texto_extraido = ""
 
+    # Desplazar hasta el final de la página para cargar todas las imágenes
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(3)  # Esperar a que las imágenes se carguen
+
     # Extraer la URL de la imagen del artículo
     imagen_url = None
     imagen_base64 = None
-    max_retries = 5
-    retry_delay = 2  # segundos
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            # Seleccionar todas las imágenes en la entrada
-            img_elements = driver.find_elements(By.TAG_NAME, 'img')
-            if not img_elements:
-                raise Exception("No se encontraron elementos <img> en la entrada")
+    try:
+        # Encontrar la imagen principal dentro del artículo
+        # Puedes ajustar el selector según la estructura de tu página
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'article img')
+        imagen_url = imagen_element.get_attribute('src')
+        app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
+    except Exception as e:
+        app.logger.error(f"No se pudo encontrar la imagen en la entrada: {e}")
 
-            # Asumimos que la primera imagen relevante es la principal
-            img_element = img_elements[0]
-
-            # Desplazar hasta la imagen para forzar la carga
-            driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", img_element)
-            app.logger.info("Desplazando hasta la imagen para forzar la carga")
-            time.sleep(2)  # Esperar un momento para que la imagen cargue
-
-            current_src = img_element.get_attribute('src')
-            app.logger.info(f"Intento {attempt}: src del <img> encontrado: {current_src}")
-
-            if current_src.startswith("http"):
-                imagen_url = current_src
-                app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
-                break
-            else:
-                # Intentar obtener 'data-lazy-src' si 'src' es una Data URI
-                data_lazy_src = img_element.get_attribute('data-lazy-src')
-                if data_lazy_src and data_lazy_src.startswith("http"):
-                    imagen_url = data_lazy_src
-                    app.logger.info(f"URL de la imagen obtenida de 'data-lazy-src': {imagen_url}")
-                    break
-                else:
-                    app.logger.warning(f"El src encontrado no es una URL válida (Data URI): {current_src}")
-                    if attempt < max_retries:
-                        app.logger.info(f"Reintentando en {retry_delay} segundos...")
-                        time.sleep(retry_delay)
-        except Exception as e:
-            app.logger.error(f"Error al intentar encontrar la imagen en la entrada: {e}")
-            if attempt < max_retries:
-                app.logger.info(f"Reintentando en {retry_delay} segundos...")
-                time.sleep(retry_delay)
-            else:
-                app.logger.error("Máximo número de reintentos alcanzado. No se encontró una URL válida para la imagen.")
-
-    if not imagen_url:
-        # Opcional: Listar todas las imágenes encontradas para depuración
-        try:
-            imagenes = driver.find_elements(By.TAG_NAME, 'img')
-            app.logger.info(f"Total de imágenes encontradas en la entrada: {len(imagenes)}")
-            for idx, img in enumerate(imagenes, start=1):
-                alt = img.get_attribute('alt')
-                src = img.get_attribute('src')
-                app.logger.info(f"Imagen {idx}: alt='{alt}', src='{src}'")
-        except Exception as ex:
-            app.logger.error(f"Error al listar imágenes para depuración: {ex}")
-
-    # Descargar la imagen y codificarla en Base64 (opcional)
-    if imagen_url:
+    # Descargar la imagen y codificarla en Base64
+    if imagen_url and imagen_url.startswith("http"):
         try:
             imagen_respuesta = requests.get(imagen_url)
             if imagen_respuesta.status_code == 200:
@@ -255,7 +212,7 @@ def extraer_pagina():
         url = data['url']
         app.logger.info(f"Extrayendo contenido de la URL: {url}")
 
-        texto_extraido, imagen_url, imagen_base64 = interactuar_con_pagina(driver, url)  # Interactuar con la página
+        texto_extraido, imagen_url, imagen_base64 = interactuar_con_pagina(driver, url)
 
         if texto_extraido is None:
             return jsonify({"error": "No se pudo extraer el texto"}), 500
@@ -265,7 +222,7 @@ def extraer_pagina():
             "url": url,
             "contenido": texto_extraido,
             "imagen_url": imagen_url,
-            "imagen_base64": imagen_base64  # Si necesitas la imagen en Base64
+            "imagen_base64": imagen_base64
         }
 
         return jsonify(response_data)
