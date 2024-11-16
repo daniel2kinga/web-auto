@@ -36,7 +36,6 @@ def configurar_driver():
     chrome_options.add_argument("--headless")  # Ejecutar en modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    # Aseguramos que las imágenes se carguen
     chrome_options.add_argument('--blink-settings=imagesEnabled=true')
     chrome_options.add_argument("--window-size=1920,1080")
     chrome_options.add_argument("--disable-gpu")
@@ -177,13 +176,15 @@ def interactuar_con_pagina(driver, url):
     imagen_base64 = None
 
     try:
-        # Encontrar la imagen principal dentro del artículo
-        # Puedes ajustar el selector según la estructura de tu página
-        imagen_element = driver.find_element(By.CSS_SELECTOR, 'article img')
+        # Actualizar el selector para encontrar la imagen principal
+        imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img')
         imagen_url = imagen_element.get_attribute('src')
         app.logger.info(f"URL de la imagen encontrada: {imagen_url}")
     except Exception as e:
         app.logger.error(f"No se pudo encontrar la imagen en la entrada: {e}")
+        # Capturar captura de pantalla para depuración
+        driver.save_screenshot("error_finding_image.png")
+        imagen_url = None
 
     # Descargar la imagen y codificarla en Base64
     if imagen_url and imagen_url.startswith("http"):
