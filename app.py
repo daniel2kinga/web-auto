@@ -162,7 +162,7 @@ def interactuar_con_pagina(driver, url):
     # Esperar a que la página de la entrada cargue completamente
     try:
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.TAG_NAME, "img"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.entry-content'))
         )
         app.logger.info("Página de la entrada cargada completamente")
     except Exception as e:
@@ -174,8 +174,9 @@ def interactuar_con_pagina(driver, url):
 
     # Extraer el contenido de la página actual
     try:
-        contenido = driver.find_elements(By.TAG_NAME, "p")
-        texto_extraido = " ".join([element.text for element in contenido])
+        # Encontrar el contenedor principal del contenido del blog
+        contenido_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content')
+        texto_extraido = contenido_element.text
         app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")
     except Exception as e:
         app.logger.error(f"Error al extraer el contenido de la página: {e}")
