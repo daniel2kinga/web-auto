@@ -161,6 +161,7 @@ def interactuar_con_pagina(driver, url):
 
     # Esperar a que la página de la entrada cargue completamente
     try:
+        # Asegurar que el contenido del blog está cargado
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'div.entry-content'))
         )
