@@ -15,41 +15,25 @@ app = Flask(__name__)
 
 # Diccionario para mapear los nombres de meses en español a números
 MESES = {
-    'enero': 1,
-    'febrero': 2,
-    'marzo': 3,
-    'abril': 4,
-    'mayo': 5,
-    'junio': 6,
-    'julio': 7,
-    'agosto': 8,
-    'septiembre': 9,
-    'octubre': 10,
-    'noviembre': 11,
-    'diciembre': 12
+    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 
+    'junio': 6, 'julio': 7, 'agosto': 8, 'septiembre': 9, 
+    'octubre': 10, 'noviembre': 11, 'diciembre': 12
 }
 
 def configurar_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Ejecutar en modo headless
+    chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-cache")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--ignore-certificate-errors")
     chrome_options.add_argument("--window-size=1920,1080")
-
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
-
     return driver
 
 def parsear_fecha(fecha_str):
-    """
-    Convierte una cadena de fecha en español a un objeto datetime.
-    Ejemplo de entrada: "31 octubre, 2024"
-    """
+    """Convierte una fecha en español a un objeto datetime."""
     try:
         partes = fecha_str.lower().replace(',', '').split()
         dia = int(partes[0])
@@ -65,15 +49,10 @@ def interactuar_con_pagina(driver, url):
     app.logger.info(f"Navegando a: {driver.current_url}")
 
     try:
-        # Esperar las entradas del blog
         WebDriverWait(driver, 15).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.eael-grid-post-holder-inner'))
         )
         entradas = driver.find_elements(By.CSS_SELECTOR, 'div.eael-grid-post-holder-inner')
-
-        if not entradas:
-            app.logger.error("No se encontraron entradas en la página")
-            return None, None, None
 
         entradas_con_fecha = []
         for entrada in entradas:
@@ -95,30 +74,30 @@ def interactuar_con_pagina(driver, url):
         entradas_con_fecha.sort(key=lambda x: x['fecha'], reverse=True)
         entrada_mas_reciente = entradas_con_fecha[0]
 
-        # Imagen de la página principal
+        # Extraer imagen de la página principal
         try:
             imagen_element = entrada_mas_reciente['entrada_element'].find_element(By.CSS_SELECTOR, 'img')
             imagen_url = imagen_element.get_attribute('src')
         except Exception:
             imagen_url = None
 
-        # Navegar a la entrada
+        # Navegar al enlace del blog más reciente
         driver.get(entrada_mas_reciente['url'])
-        app.logger.info(f"Navegando a la entrada más reciente: {entrada_mas_reciente['url']}")
+        app.logger.info(f"Navegando a la entrada: {entrada_mas_reciente['url']}")
 
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.entry-content'))
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.elementor-widget-container'))
         )
 
         # Extraer contenido del blog
-        contenido_elementos = driver.find_elements(By.CSS_SELECTOR, 'div.entry-content p')
-        texto_extraido = " ".join([element.text for element in contenido_elementos])
+        contenido_elementos = driver.find_elements(By.CSS_SELECTOR, 'div.elementor-widget-container p, div.elementor-widget-container h2, div.elementor-widget-container h3')
+        texto_extraido = " ".join([element.text.strip() for element in contenido_elementos if element.text.strip()])
 
     except Exception as e:
         app.logger.error(f"Error al procesar las entradas: {e}")
         return None, None, None
 
-    # Descargar y codificar la imagen
+    # Descargar la imagen
     imagen_base64 = None
     if imagen_url:
         try:
@@ -142,7 +121,7 @@ def extraer_pagina():
         texto_extraido, imagen_url, imagen_base64 = interactuar_con_pagina(driver, url)
 
         if texto_extraido is None:
-            return jsonify({"error": "No se pudo extraer el texto"}), 500
+            return jsonify({"error": "No se pudo extraer el contenido"}), 500
 
         return jsonify({
             "url": url,
