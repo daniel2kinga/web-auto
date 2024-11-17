@@ -32,7 +32,7 @@ MESES = {
 
 def configurar_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Ejecutar en modo headless
+    # chrome_options.add_argument("--headless")  # Comentar para desactivar el modo headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument('--blink-settings=imagesEnabled=true')
@@ -161,9 +161,9 @@ def interactuar_con_pagina(driver, url):
 
     # Esperar a que la página de la entrada cargue completamente
     try:
-        # Asegurar que el contenido del blog está cargado
+        # Actualiza el selector según el contenedor real del contenido del blog
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.entry-content'))
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.contenedor-de-contenido'))
         )
         app.logger.info("Página de la entrada cargada completamente")
     except Exception as e:
@@ -175,8 +175,8 @@ def interactuar_con_pagina(driver, url):
 
     # Extraer el contenido de la página actual
     try:
-        # Encontrar el contenedor principal del contenido del blog
-        contenido_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content')
+        # Actualiza el selector con el contenedor correcto del contenido
+        contenido_element = driver.find_element(By.CSS_SELECTOR, 'div.contenedor-de-contenido')
         texto_extraido = contenido_element.text
         app.logger.info(f"Texto extraído: {texto_extraido[:500]}...")
     except Exception as e:
@@ -186,7 +186,7 @@ def interactuar_con_pagina(driver, url):
     # Si no se obtuvo la imagen antes, intentar extraerla de la página de la entrada
     if not imagen_url:
         try:
-            imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.entry-content img')
+            imagen_element = driver.find_element(By.CSS_SELECTOR, 'div.contenedor-de-contenido img')
             imagen_url = imagen_element.get_attribute('src')
             app.logger.info(f"URL de la imagen encontrada en la entrada: {imagen_url}")
         except Exception as e:
