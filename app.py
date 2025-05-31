@@ -11,6 +11,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import StaleElementReferenceException
 from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
@@ -19,13 +20,20 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Diccionario para mapear meses en español a números
+MESES = {
+    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5,
+    'junio': 6, 'julio': 7, 'agosto': 8, 'septiembre': 9,
+    'octubre': 10, 'noviembre': 11, 'diciembre': 12
+}
+
 
 def configurar_driver():
     """
     Configura y devuelve un Chrome WebDriver en modo headless.
     """
     options = Options()
-    # Para Chrome versión 121+:
+    # Para Chrome versión 121+: usar "--headless=new"
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -39,79 +47,124 @@ def configurar_driver():
     return driver
 
 
+def parsear_fecha(fecha_str):
+    """
+    Convierte una fecha en español a un objeto datetime.
+    Ejemplos de formatos: "12 de mayo de 2025", "12 mayo 2025", "12 mayo".
+    """
+    try:
+        partes = fecha_str.lower().replace(',', '').split()
+        dia = int(partes[0])
+        mes = MESES.get(partes[1])
+        if not mes:
+            return None
+        if len(partes) == 3:
+            anio = int(partes[2])
+        else:
+            anio = datetime.now().year
+        return datetime(anio, mes, dia)
+    except Exception as e:
+        logger.error(f"Error parseando fecha '{fecha_str}': {e}")
+        return None
+
+
 def interactuar_con_pagina(driver, url):
     """
-    1. Va a la página principal (url).
-    2. Espera hasta que aparezca al menos un <a href*="/blog/"> con <img> dentro.
-    3. Toma esa primera miniatura y su enlace (post_url) como el “post más reciente”.
-    4. Extrae la URL de la imagen (src o data-src).
-    5. Navega a post_url y extrae todo el texto dentro de <div class="elementor-widget-container">.
-    6. Descarga la imagen_url (si existe) y la convierte a base64.
-    Devuelve (texto_del_post, imagen_url, imagen_base64). Si algo falla, devuelve (None, None, None).
+    1) Abre la página principal.
+    2) Hace scroll para forzar carga de lazy-loading.
+    3) Espera a que aparezcan tarjetas con la clase 'eael-grid-post-holder-inner'.
+    4) Extrae fecha, enlace y miniatura del post más reciente.
+    5) Navega al post y extrae el texto dentro de 'div.elementor-widget-container'.
+    6) Descarga la miniatura y la convierte a Base64.
+    Devuelve (texto_del_post, imagen_url, imagen_base64) o (None, None, None) en caso de fallo.
     """
-    # 1) Abrir la página principal
     driver.get(url)
     logger.info(f"Navegando a la página principal: {driver.current_url}")
 
-    # 2) Esperar hasta que aparezca al menos un <a href*="/blog/"> <img>
+    # 2) Hacer scroll hacia abajo en 2 etapas para cargar imágenes lazy
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
+    time.sleep(2)
+    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+    time.sleep(2)
+
+    # 3) Esperar hasta que aparezcan tarjetas con clase 'eael-grid-post-holder-inner'
     try:
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "a[href*='/blog/'] img")
-            )
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.eael-grid-post-holder-inner"))
         )
     except Exception as e:
-        logger.error(f"No se encontró miniatura en la página principal: {e}")
+        logger.error(f"No se encontraron elementos 'div.eael-grid-post-holder-inner': {e}")
         return None, None, None
 
-    # 3) Tomar la primera miniatura
-    img_elements = driver.find_elements(By.CSS_SELECTOR, "a[href*='/blog/'] img")
-    if not img_elements:
-        logger.error("No se hallaron elementos <a href*='/blog/'] img")
+    tarjetas = driver.find_elements(By.CSS_SELECTOR, "div.eael-grid-post-holder-inner")
+    entradas = []
+
+    for t in tarjetas:
+        try:
+            # Extraer y parsear la fecha
+            time_element = t.find_element(By.CSS_SELECTOR, "time")
+            fecha_str = time_element.text.strip()
+            fecha = parsear_fecha(fecha_str)
+            if not fecha:
+                continue
+
+            # Extraer enlace al post
+            enlace = t.find_element(By.CSS_SELECTOR, "a.eael-grid-post-link")
+            post_url = enlace.get_attribute("href")
+
+            # Extraer miniatura: <img> dentro de 'a.eael-grid-post-link'
+            try:
+                img_el = enlace.find_element(By.CSS_SELECTOR, "img")
+            except Exception:
+                img_el = None
+
+            entradas.append({
+                "fecha": fecha,
+                "url": post_url,
+                "img_el": img_el
+            })
+        except Exception as e:
+            logger.error(f"Tarjeta ignorada (fecha/enlace): {e}")
+            continue
+
+    if not entradas:
+        logger.error("No se encontraron entradas con fecha válida")
         return None, None, None
 
-    img_el = img_elements[0]
-    # El <img> está dentro de un <a>; subimos un nodo para obtener post_url
-    try:
-        post_link_el = img_el.find_element(By.XPATH, "./ancestor::a")
-        post_url = post_link_el.get_attribute("href")
-    except Exception as e:
-        logger.error(f"No se pudo extraer el enlace del post desde la miniatura: {e}")
-        return None, None, None
+    # 4) Tomar la entrada más reciente
+    entrada_mas_reciente = max(entradas, key=lambda x: x["fecha"])
 
-    # 4) Extraer URL de la imagen (src o data-src)
-    imagen_url = img_el.get_attribute("src") or img_el.get_attribute("data-src")
-    # Si la URL está en srcset, tomar la última posición
-    if not imagen_url:
-        srcset = img_el.get_attribute("srcset")
-        if srcset:
-            partes = [p.strip() for p in srcset.split(",")]
-            if partes:
-                ultima = partes[-1].split()[0]
-                # Si es relativa, convertir a absoluta
-                if ultima.startswith(("http://", "https://")):
-                    imagen_url = ultima
-                else:
-                    from urllib.parse import urljoin
-                    imagen_url = urljoin(url, ultima)
+    # Extraer URL de la miniatura (si existe)
+    imagen_url = None
+    if entrada_mas_reciente["img_el"]:
+        img_el = entrada_mas_reciente["img_el"]
+        imagen_url = img_el.get_attribute("src") or img_el.get_attribute("data-src")
+        if not imagen_url:
+            srcset = img_el.get_attribute("srcset")
+            if srcset:
+                partes = [p.strip() for p in srcset.split(",")]
+                if partes:
+                    ultima = partes[-1].split()[0]
+                    if ultima.startswith(("http://", "https://")):
+                        imagen_url = ultima
+                    else:
+                        from urllib.parse import urljoin
+                        imagen_url = urljoin(url, ultima)
 
-    logger.info(f"Post más reciente identificado: {post_url}")
-    logger.info(f"Miniatura encontrada: {imagen_url}")
+    logger.info(f"Post más reciente: {entrada_mas_reciente['url']}")
+    logger.info(f"Miniatura URL: {imagen_url}")
 
     # 5) Navegar al post y extraer texto
-    driver.get(post_url)
-    logger.info(f"Navegando al post: {post_url}")
+    driver.get(entrada_mas_reciente["url"])
+    logger.info(f"Navegando al post: {entrada_mas_reciente['url']}")
     try:
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "div.elementor-widget-container")
-            )
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div.elementor-widget-container"))
         )
     except Exception as e:
-        logger.error(f"No se cargó el contenido del post: {e}")
+        logger.error(f"No se cargó contenido del post: {e}")
         return None, imagen_url, None
 
-    # Extraer todos los párrafos y encabezados dentro de "div.elementor-widget-container"
     texto_extraido = ""
     retries = 3
     while retries:
@@ -122,11 +175,11 @@ def interactuar_con_pagina(driver, url):
             )
             texto_extraido = " ".join([b.text.strip() for b in bloques if b.text.strip()])
             break
-        except Exception:
+        except StaleElementReferenceException:
             retries -= 1
             time.sleep(1)
 
-    # 6) Descargar la imagen y convertir a base64
+    # 6) Descargar la miniatura y convertir a Base64 (si existe)
     imagen_base64 = None
     if imagen_url:
         try:
@@ -134,7 +187,7 @@ def interactuar_con_pagina(driver, url):
             if resp.status_code == 200:
                 imagen_base64 = base64.b64encode(resp.content).decode("utf-8")
             else:
-                logger.warning(f"Ocurrió un HTTP {resp.status_code} al descargar la imagen.")
+                logger.warning(f"Respuesta HTTP {resp.status_code} al descargar miniatura.")
         except Exception as e:
             logger.error(f"Error descargando la imagen: {e}")
 
@@ -144,8 +197,8 @@ def interactuar_con_pagina(driver, url):
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     """
-    Endpoint que recibe JSON { "url": "https://salesystems.es/blog" }
-    y devuelve { "url": ..., "contenido": ..., "imagen_url": ..., "imagen_base64": ... }.
+    Endpoint Flask que recibe JSON: { "url": "https://salesystems.es/blog" }
+    Devuelve { "url": ..., "contenido": ..., "imagen_url": ..., "imagen_base64": ... }.
     """
     driver = configurar_driver()
     try:
