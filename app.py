@@ -29,13 +29,6 @@ logger = logging.getLogger(__name__)
 DOWNLOAD_DIR = "downloaded_images"
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# Diccionario para mapear meses en español a números
-MESES = {
-    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5,
-    'junio': 6, 'julio': 7, 'agosto': 8, 'septiembre': 9,
-    'octubre': 10, 'noviembre': 11, 'diciembre': 12
-}
-
 
 def sanitize_filename(text: str) -> str:
     """
@@ -82,49 +75,26 @@ def configurar_driver():
     return driver
 
 
-def parsear_fecha(fecha_str: str):
-    """
-    Convierte una fecha en español a un objeto datetime.
-    Ejemplos: "12 de mayo de 2025", "12 mayo 2025", "12 mayo".
-    """
-    try:
-        partes = fecha_str.lower().replace(',', '').split()
-        dia = int(partes[0])
-        mes = MESES.get(partes[1])
-        if not mes:
-            return None
-        if len(partes) == 3:
-            anio = int(partes[2])
-        else:
-            anio = datetime.now().year
-        return datetime(anio, mes, dia)
-    except Exception as e:
-        logger.error(f"Error parseando fecha '{fecha_str}': {e}")
-        return None
-
-
 def interactuar_con_pagina(driver, url):
     """
     1) Abre la página principal (url).
     2) Hace scroll para cargar imágenes lazy.
-    3) Espera a que existan tarjetas de post: <div class="eael-grid-post-holder-inner">.
-    4) Recorre cada tarjeta y extrae:
-         - Fecha del post.
-         - Título.
-         - Enlace al post.
-         - URL de la miniatura.
-    5) Selecciona la tarjeta más reciente según la fecha.
-    6) Para esa tarjeta:
-         - Genera nombre de archivo único basado en el título y descarga la imagen.
-         - Abre el post y extrae todo el texto (Elementor o <article><p>).
-         - Codifica la imagen guardada a Base64.
-    Devuelve un dict con:
+    3) Encuentra el PRIMER <a href*="/blog/"> que contenga un <img>.
+    4) De ese <a> extrae:
+         - post_url = href
+         - imagen_url = src o data-lazy-src del <img>.
+    5) Navega a post_url:
+         - Extrae título desde <h1 class="entry-title"> o <h2 class="entry-title">.
+         - Extrae texto dentro de div.elementor-widget-container (o fallback <article><p>).
+    6) Genera nombre único, descarga la imagen y la guarda.
+    7) Convierte la imagen guardada a Base64.
+    Devuelve dict:
       {
-        "title": título,
-        "text": contenido_del_post,
-        "image_url": URL_de_la_miniatura,
-        "saved_filename": nombre_local,
-        "image_base64": cadena_Base64
+        "title": ...,
+        "text": ...,
+        "image_url": ...,
+        "saved_filename": ...,
+        "image_base64": ...
       }
     Si falla, devuelve None.
     """
@@ -137,94 +107,88 @@ def interactuar_con_pagina(driver, url):
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     time.sleep(2)
 
-    # Esperar a que aparezcan las tarjetas de post
+    # Esperar a que aparezca al menos un <a href*="/blog/"> <img>
     try:
         WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.eael-grid-post-holder-inner"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/blog/'] img"))
         )
     except TimeoutException:
-        logger.error("No se encontraron elementos 'div.eael-grid-post-holder-inner'.")
+        logger.error("No se encontró ningún <a href*='/blog/'] <img> en la página.")
         return None
 
-    tarjetas = driver.find_elements(By.CSS_SELECTOR, "div.eael-grid-post-holder-inner")
-    posts_info = []
+    # Tomar la primera instancia
+    anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/blog/'] img")
+    if not anchors:
+        logger.error("La lista de miniaturas está vacía.")
+        return None
 
-    for tarjeta in tarjetas:
+    img_el = anchors[0]
+    try:
+        post_anchor = img_el.find_element(By.XPATH, "./ancestor::a[contains(@href, '/blog/')]")
+        post_url = post_anchor.get_attribute("href")
+    except NoSuchElementException:
+        logger.error("No se pudo encontrar el <a> ancestro con '/blog/'.")
+        return None
+
+    # Extraer URL de la miniatura
+    imagen_url = img_el.get_attribute("data-lazy-src") or img_el.get_attribute("src")
+    if not imagen_url:
+        srcset = img_el.get_attribute("data-lazy-srcset") or img_el.get_attribute("srcset")
+        if srcset:
+            partes = [p.strip().split()[0] for p in srcset.split(",") if p.strip()]
+            if partes:
+                ultima = partes[-1]
+                imagen_url = ultima if ultima.startswith(("http://", "https://")) else urljoin(url, ultima)
+    if not imagen_url:
+        logger.error("No se pudo determinar la URL de la miniatura.")
+        return None
+
+    # Ir al post para extraer título y texto
+    driver.get(post_url)
+    logger.info(f"Navegando al post: {post_url}")
+    title = ""
+    text_content = ""
+
+    # Extraer título (h1.entry-title o h2.entry-title)
+    try:
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "h1.entry-title, h2.entry-title"))
+        )
         try:
-            # Extraer fecha
-            try:
-                time_el = tarjeta.find_element(By.CSS_SELECTOR, "time")
-                fecha_obj = parsear_fecha(time_el.text.strip())
-            except NoSuchElementException:
-                fecha_obj = None
+            title_el = driver.find_element(By.CSS_SELECTOR, "h1.entry-title")
+        except NoSuchElementException:
+            title_el = driver.find_element(By.CSS_SELECTOR, "h2.entry-title")
+        title = title_el.text.strip()
+    except TimeoutException:
+        logger.warning("No se encontró <h1.entry-title> ni <h2.entry-title>; título vacío.")
 
-            # Extraer título
-            try:
-                titulo_el = tarjeta.find_element(By.CSS_SELECTOR, "h2.entry-title a")
-                titulo = titulo_el.text.strip() or "sin_titulo"
-            except NoSuchElementException:
-                titulo = "sin_titulo"
+    # Extraer texto (Elementor o fallback <article><p>)
+    try:
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div.elementor-widget-container"))
+        )
+        bloques = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div.elementor-widget-container p, div.elementor-widget-container h2, div.elementor-widget-container h3"
+        )
+        text_content = " ".join([b.text.strip() for b in bloques if b.text.strip()])
+    except TimeoutException:
+        logger.warning("No se encontró contenedor Elementor; intentando <article> <p>.")
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "article p"))
+            )
+            parrafos = driver.find_elements(By.CSS_SELECTOR, "article p")
+            text_content = " ".join([p.text.strip() for p in parrafos if p.text.strip()])
+        except TimeoutException:
+            logger.error("No se encontró texto en <article>.")
+            text_content = ""
 
-            # Extraer enlace al post
-            try:
-                post_url = tarjeta.find_element(By.CSS_SELECTOR, "h2.entry-title a").get_attribute("href")
-            except NoSuchElementException:
-                post_url = None
-
-            # Extraer URL de la miniatura
-            try:
-                img_el = tarjeta.find_element(By.CSS_SELECTOR, "img.entered.lazyloaded")
-            except NoSuchElementException:
-                try:
-                    img_el = tarjeta.find_element(By.TAG_NAME, "img")
-                except NoSuchElementException:
-                    img_el = None
-
-            if img_el:
-                imagen_url = img_el.get_attribute("data-lazy-src") or img_el.get_attribute("src")
-                if not imagen_url:
-                    srcset = img_el.get_attribute("data-lazy-srcset") or img_el.get_attribute("srcset")
-                    if srcset:
-                        partes = [p.strip().split()[0] for p in srcset.split(",") if p.strip()]
-                        if partes:
-                            ultima = partes[-1]
-                            imagen_url = ultima if ultima.startswith(("http://", "https://")) else urljoin(url, ultima)
-            else:
-                imagen_url = None
-
-            posts_info.append({
-                "fecha": fecha_obj,
-                "title": titulo,
-                "post_url": post_url,
-                "image_url": imagen_url
-            })
-
-        except Exception as e:
-            logger.error(f"Error procesando una tarjeta: {e}")
-            continue
-
-    # Filtrar solo posts con fecha, enlace e imagen válidos
-    posts_validos = [
-        p for p in posts_info
-        if p["fecha"] is not None and p["post_url"] and p["image_url"]
-    ]
-    if not posts_validos:
-        logger.error("No se encontraron posts válidos con fecha, enlace e imagen.")
-        return None
-
-    # Seleccionar el post más reciente
-    post_mas_reciente = max(posts_validos, key=lambda x: x["fecha"])
-    titulo = post_mas_reciente["title"]
-    imagen_url = post_mas_reciente["image_url"]
-    post_url = post_mas_reciente["post_url"]
-
-    # Generar nombre único para la imagen
+    # Generar nombre único para la imagen y descargarla
     ext = os.path.splitext(urlparse(imagen_url).path)[1] or ".jpg"
-    base_name = sanitize_filename(titulo)
+    base_name = sanitize_filename(title or "post")
     nuevo_nombre = unique_filename(DOWNLOAD_DIR, base_name, ext)
     saved_path = os.path.join(DOWNLOAD_DIR, nuevo_nombre)
-
-    # Descargar y guardar la imagen
     try:
         resp = requests.get(imagen_url, headers={"User-Agent": "Mozilla/5.0"})
         if resp.status_code == 200:
@@ -237,34 +201,8 @@ def interactuar_con_pagina(driver, url):
         logger.error(f"Error descargando la imagen: {e}")
         return None
 
-    # Abrir el post y extraer texto
-    driver.get(post_url)
-    logger.info(f"Navegando al post: {post_url}")
-    texto_extraido = ""
-
-    try:
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "div.elementor-widget-container"))
-        )
-        bloques = driver.find_elements(
-            By.CSS_SELECTOR,
-            "div.elementor-widget-container p, div.elementor-widget-container h2, div.elementor-widget-container h3"
-        )
-        texto_extraido = " ".join([b.text.strip() for b in bloques if b.text.strip()])
-    except TimeoutException:
-        logger.warning("No se encontró contenedor Elementor; intentando <article> <p>.")
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "article p"))
-            )
-            parrafos = driver.find_elements(By.CSS_SELECTOR, "article p")
-            texto_extraido = " ".join([p.text.strip() for p in parrafos if p.text.strip()])
-        except TimeoutException:
-            logger.error("No se encontró <article> con <p> para extraer texto.")
-            texto_extraido = ""
-
     # Convertir la imagen guardada a Base64
-    imagen_base64 = None
+    imagen_base64 = ""
     try:
         with open(saved_path, "rb") as f:
             imagen_base64 = base64.b64encode(f.read()).decode("utf-8")
@@ -272,8 +210,8 @@ def interactuar_con_pagina(driver, url):
         logger.error(f"Error codificando la imagen a Base64: {e}")
 
     return {
-        "title": titulo,
-        "text": texto_extraido,
+        "title": title,
+        "text": text_content,
         "image_url": imagen_url,
         "saved_filename": nuevo_nombre,
         "image_base64": imagen_base64
