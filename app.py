@@ -77,10 +77,9 @@ def interactuar_con_pagina(driver, url):
     """
     1) Abre la página principal (url).
     2) Hace scroll para cargar lazy-loading.
-    3) Busca la miniatura del post más reciente usando varios selectores posibles.
-    4) Extrae post_url y texto del post, intentando primero div.elementor-widget-container,
-       y si no existe, busca dentro de <article> cualquier <p>.
-    5) Descarga la miniatura como Base64.
+    3) Busca la tarjeta del post más reciente: parsea fecha, enlace y miniatura.
+    4) Extrae post_url y texto del post (dentro de div.elementor-widget-container o <article> <p>).
+    5) Descarga la miniatura y la convierte a Base64.
     Devuelve (texto_del_post, imagen_url, imagen_base64).
     """
     driver.get(url)
@@ -92,68 +91,82 @@ def interactuar_con_pagina(driver, url):
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     time.sleep(2)
 
-    # Esperar a que aparezca al menos un posible <img> de miniatura
+    # Esperar a que aparezcan las tarjetas de post
     try:
         WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located(
-                (
-                    By.CSS_SELECTOR,
-                    "img.wp-post-image, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img, article img"
-                )
-            )
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.eael-grid-post-holder-inner"))
         )
     except TimeoutException:
-        logger.error("No se encontró ninguna miniatura usando los selectores establecidos.")
+        logger.error("No se encontraron elementos 'div.eael-grid-post-holder-inner'.")
         return None, None, None
 
-    # Reunir todas las posibles miniaturas
-    posibles_imgs = driver.find_elements(
-        By.CSS_SELECTOR,
-        "img.wp-post-image, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img, article img"
-    )
+    tarjetas = driver.find_elements(By.CSS_SELECTOR, "div.eael-grid-post-holder-inner")
+    entradas = []
 
-    if not posibles_imgs:
-        logger.error("No hay elementos <img> de miniatura en la página.")
-        return None, None, None
-
-    # Tomar la primera miniatura válida
-    img_el = None
-    post_url = None
-    for candidate in posibles_imgs:
-        # Intentar extraer el <a> ancestro sin filtrar por '/blog/'
+    for t in tarjetas:
         try:
-            a_anc = candidate.find_element(By.XPATH, "./ancestor::a")
-            href = a_anc.get_attribute("href")
-            if href and href != url:  # descartar si apunta a la misma página
-                img_el = candidate
-                post_url = href
-                break
-        except NoSuchElementException:
+            # Extraer y parsear la fecha
+            time_element = t.find_element(By.CSS_SELECTOR, "time")
+            fecha_str = time_element.text.strip()
+            fecha = parsear_fecha(fecha_str)
+            if not fecha:
+                continue
+
+            # Extraer el enlace al post (a.eael-grid-post-link)
+            enlace = t.find_element(By.CSS_SELECTOR, "a.eael-grid-post-link")
+            post_url = enlace.get_attribute("href")
+
+            # Extraer miniatura: el <img> dentro de la propia tarjeta
+            # Buscamos primero <img.decoding>, luego fallback a cualquier <img>
+            try:
+                # Según el HTML que diste, el <img> tiene clases "entered lazyloaded" y atributos data-lazy-src
+                img_el = t.find_element(By.CSS_SELECTOR, "img.entered.lazyloaded")
+            except NoSuchElementException:
+                try:
+                    img_el = t.find_element(By.TAG_NAME, "img")
+                except NoSuchElementException:
+                    img_el = None
+
+            entradas.append({
+                "fecha": fecha,
+                "url": post_url,
+                "img_el": img_el
+            })
+        except Exception as e:
+            logger.error(f"Tarjeta ignorada (fecha/enlace): {e}")
             continue
 
-    if not img_el or not post_url:
-        logger.error("No se pudo encontrar una miniatura dentro de un <a> válido.")
+    if not entradas:
+        logger.error("No se encontraron entradas con fecha válida.")
         return None, None, None
 
-    # Extraer URL de la imagen
-    imagen_url = img_el.get_attribute("src") or img_el.get_attribute("data-src")
-    if not imagen_url:
-        srcset = img_el.get_attribute("srcset")
-        if srcset:
-            partes = [p.strip() for p in srcset.split(",")]
-            if partes:
-                ultima = partes[-1].split()[0]
-                if ultima.startswith(("http://", "https://")):
-                    imagen_url = ultima
-                else:
-                    imagen_url = urljoin(url, ultima)
+    # Seleccionar la entrada más reciente
+    entrada_mas_reciente = max(entradas, key=lambda x: x["fecha"])
 
-    logger.info(f"Post más reciente: {post_url}")
+    # Extraer URL de la miniatura (si existe)
+    imagen_url = None
+    if entrada_mas_reciente["img_el"]:
+        img_el = entrada_mas_reciente["img_el"]
+        # Intentar src primero, luego data-lazy-src
+        imagen_url = img_el.get_attribute("src") or img_el.get_attribute("data-lazy-src")
+        if not imagen_url:
+            # Fallback a data-src (por si las etiquetas cambian)
+            imagen_url = img_el.get_attribute("data-src")
+        if not imagen_url:
+            # Chequear srcset para mayor resolución
+            srcset = img_el.get_attribute("srcset") or img_el.get_attribute("data-lazy-srcset")
+            if srcset:
+                partes = [p.strip().split()[0] for p in srcset.split(",") if p.strip()]
+                if partes:
+                    última = partes[-1]
+                    imagen_url = última if última.startswith(("http://", "https://")) else urljoin(url, última)
+
+    logger.info(f"Post más reciente: {entrada_mas_reciente['url']}")
     logger.info(f"Miniatura URL: {imagen_url}")
 
     # Navegar al post y extraer texto
-    driver.get(post_url)
-    logger.info(f"Navegando al post: {post_url}")
+    driver.get(entrada_mas_reciente["url"])
+    logger.info(f"Navegando al post: {entrada_mas_reciente['url']}")
 
     texto_extraido = ""
     # Intentar extraer con Elementor
@@ -167,8 +180,8 @@ def interactuar_con_pagina(driver, url):
         )
         texto_extraido = " ".join([b.text.strip() for b in bloques if b.text.strip()])
     except TimeoutException:
-        # Si no hay elemento Elementor, buscar dentro de <article> cualquier <p>
-        logger.warning("No se encontró 'div.elementor-widget-container', intentando <article> <p>")
+        # Si no se encuentra el contenedor de Elementor, fallback a <article> <p>
+        logger.warning("No se encontró 'div.elementor-widget-container', intentando <article> <p>.")
         try:
             WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "article p"))
