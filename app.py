@@ -1,7 +1,5 @@
-import os
-import base64
-import requests
-import time
+import os, base64, requests, time
+from urllib.parse import urljoin
 from datetime import datetime
 from flask import Flask, request, jsonify
 from selenium import webdriver
@@ -15,148 +13,136 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
 
-# Diccionario para mapear los nombres de meses en español a números
-MESES = {
-    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 
-    'junio': 6, 'julio': 7, 'agosto': 8, 'septiembre': 9, 
-    'octubre': 10, 'noviembre': 11, 'diciembre': 12
-}
+MESES = {m: i for i, m in enumerate(
+    ['enero','febrero','marzo','abril','mayo','junio',
+     'julio','agosto','septiembre','octubre','noviembre','diciembre'], 1)}
 
+# ---------- CONFIGURAR CHROME HEADLESS ----------
 def configurar_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    co = Options()
+    co.add_argument("--headless=new")           # Chrome 121+
+    co.add_argument("--no-sandbox")
+    co.add_argument("--disable-dev-shm-usage")
+    co.add_argument("--disable-gpu")
+    co.add_argument("--window-size=1920,1080")
     service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=chrome_options)
-    return driver
+    return webdriver.Chrome(service=service, options=co)
 
+# ---------- FECHA ----------
 def parsear_fecha(fecha_str):
-    """Convierte una fecha en español a un objeto datetime."""
     try:
-        partes = fecha_str.lower().replace(',', '').split()
-        dia = int(partes[0])
-        mes = MESES.get(partes[1])
-        anio = datetime.now().year if len(partes) == 2 else int(partes[2])
-        return datetime(anio, mes, dia)
+        d, mes, *resto = fecha_str.lower().replace(',', '').split()
+        dia = int(d)
+        anio = int(resto[0]) if resto else datetime.now().year
+        return datetime(anio, MESES[mes], dia)
     except Exception as e:
-        app.logger.error(f"Error al parsear la fecha '{fecha_str}': {e}")
+        app.logger.error(f"Fecha inválida '{fecha_str}': {e}")
         return None
 
+# ---------- NUEVA FUNCIÓN: EXTRAE LA URL DE LA IMAGEN ----------
+def extraer_url_imagen(img_el, base_url):
+    """Devuelve la mejor URL de una etiqueta <img> o None."""
+    cand = (
+        img_el.get_attribute("src")                              or
+        img_el.get_attribute("data-src")                         or
+        img_el.get_attribute("data-lazy-src")                    or
+        img_el.get_attribute("data-thumb")                       or
+        ""
+    )
+    if not cand:                         # ¿lazy con srcset?
+        srcset = img_el.get_attribute("srcset")
+        if srcset:
+            # nos quedamos con la última (mayor resolución)
+            cand = srcset.strip().split()[-2]  # formato: url   1024w
+    if cand and not cand.startswith(("http://", "https://")):
+        cand = urljoin(base_url, cand)
+    return cand if cand else None
+
+# ---------- LÓGICA PRINCIPAL ----------
 def interactuar_con_pagina(driver, url):
     driver.get(url)
-    app.logger.info(f"Navegando a: {driver.current_url}")
+    app.logger.info(f"Página inicial: {driver.current_url}")
 
-    try:
-        # Esperar a que se carguen las entradas
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'div.eael-grid-post-holder-inner'))
-        )
-        entradas = driver.find_elements(By.CSS_SELECTOR, 'div.eael-grid-post-holder-inner')
+    # esperar tarjetas
+    WebDriverWait(driver, 15).until(
+        EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.eael-grid-post-holder-inner"))
+    )
+    tarjetas = driver.find_elements(By.CSS_SELECTOR, "div.eael-grid-post-holder-inner")
 
-        entradas_con_fecha = []
-        for entrada in entradas:
-            try:
-                time_element = entrada.find_element(By.CSS_SELECTOR, 'time')
-                fecha_str = time_element.text.strip()
-                fecha = parsear_fecha(fecha_str)
-                if fecha:
-                    enlace_element = entrada.find_element(By.CSS_SELECTOR, 'a.eael-grid-post-link')
-                    enlace_url = enlace_element.get_attribute('href')
-                    entradas_con_fecha.append({
-                        'fecha': fecha,
-                        'url': enlace_url,
-                        'entrada_element': entrada
-                    })
-            except Exception as e:
-                app.logger.error(f"Error procesando entrada: {e}")
-
-        if not entradas_con_fecha:
-            app.logger.error("No se encontraron entradas con fechas válidas")
-            return None, None, None
-
-        # Seleccionar la entrada más reciente
-        entradas_con_fecha.sort(key=lambda x: x['fecha'], reverse=True)
-        entrada_mas_reciente = entradas_con_fecha[0]
-
-        # Extraer imagen de la entrada en la página principal
+    entradas = []
+    for t in tarjetas:
         try:
-            imagen_element = entrada_mas_reciente['entrada_element'].find_element(By.CSS_SELECTOR, 'img')
-            imagen_url = imagen_element.get_attribute('src')
-        except Exception:
-            imagen_url = None
+            fecha_txt = t.find_element(By.CSS_SELECTOR, "time").text.strip()
+            fecha = parsear_fecha(fecha_txt)
+            if not fecha:
+                continue
+            enlace = t.find_element(By.CSS_SELECTOR, "a.eael-grid-post-link")
+            entradas.append({
+                "fecha": fecha,
+                "url": enlace.get_attribute("href"),
+                "img_el": enlace.find_element(By.CSS_SELECTOR, "img") if enlace else None
+            })
+        except Exception as e:
+            app.logger.error(f"Tarjeta ignorada: {e}")
 
-        # Navegar al enlace del blog más reciente
-        driver.get(entrada_mas_reciente['url'])
-        app.logger.info(f"Navegando a la entrada: {entrada_mas_reciente['url']}")
-
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, 'div.elementor-widget-container'))
-        )
-
-        # Extraer contenido del blog con reintentos en caso de stale element
-        retries = 3
-        texto_extraido = ""
-        while retries:
-            try:
-                contenido_elementos = driver.find_elements(
-                    By.CSS_SELECTOR,
-                    'div.elementor-widget-container p, div.elementor-widget-container h2, div.elementor-widget-container h3'
-                )
-                texto_extraido = " ".join([
-                    element.text.strip() for element in contenido_elementos if element.text.strip()
-                ])
-                break  # Salir del bucle si se extrajo el contenido sin problemas
-            except StaleElementReferenceException:
-                app.logger.error("StaleElementReferenceException detectada durante la extracción del contenido. Reintentando...")
-                retries -= 1
-                time.sleep(1)
-
-    except Exception as e:
-        app.logger.error(f"Error al procesar las entradas: {e}")
+    if not entradas:
         return None, None, None
 
-    # Descargar la imagen y convertirla a base64
-    imagen_base64 = None
+    # más reciente
+    entrada = max(entradas, key=lambda x: x["fecha"])
+
+    # ---- imagen de la tarjeta ----
+    imagen_url = extraer_url_imagen(entrada["img_el"], url) if entrada["img_el"] else None
+
+    # ---- navegar al post y extraer texto ----
+    driver.get(entrada["url"])
+    app.logger.info(f"Entrando al post: {entrada['url']}")
+    WebDriverWait(driver, 15).until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "div.elementor-widget-container"))
+    )
+
+    retries, texto = 3, ""
+    while retries:
+        try:
+            bloques = driver.find_elements(
+                By.CSS_SELECTOR,
+                "div.elementor-widget-container p, div.elementor-widget-container h2, div.elementor-widget-container h3"
+            )
+            texto = " ".join(b.text.strip() for b in bloques if b.text.strip())
+            break
+        except StaleElementReferenceException:
+            retries -= 1
+            time.sleep(1)
+
+    # ---- descargar imagen ----
+    imagen_b64 = None
     if imagen_url:
         try:
-            respuesta = requests.get(imagen_url)
-            if respuesta.status_code == 200:
-                imagen_base64 = base64.b64encode(respuesta.content).decode('utf-8')
+            r = requests.get(imagen_url, headers={"User-Agent": "Mozilla/5.0"})
+            if r.ok:
+                imagen_b64 = base64.b64encode(r.content).decode()
         except Exception as e:
-            app.logger.error(f"Error descargando la imagen: {e}")
+            app.logger.error(f"No se pudo descargar la imagen: {e}")
 
-    return texto_extraido, imagen_url, imagen_base64
+    return texto, imagen_url, imagen_b64
 
-@app.route('/extraer', methods=['POST'])
+# ---------- ENDPOINT ----------
+@app.route("/extraer", methods=["POST"])
 def extraer_pagina():
+    data = request.json or {}
+    url = data.get("url")
+    if not url:
+        return jsonify(error="No se proporcionó URL"), 400
+
     driver = configurar_driver()
     try:
-        data = request.json
-        if not data or 'url' not in data:
-            return jsonify({"error": "No se proporcionó URL"}), 400
-
-        url = data['url']
-        texto_extraido, imagen_url, imagen_base64 = interactuar_con_pagina(driver, url)
-
-        if texto_extraido is None:
-            return jsonify({"error": "No se pudo extraer el contenido"}), 500
-
-        return jsonify({
-            "url": url,
-            "contenido": texto_extraido,
-            "imagen_url": imagen_url,
-            "imagen_base64": imagen_base64
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        texto, img_url, img_b64 = interactuar_con_pagina(driver, url)
+        if texto is None:
+            return jsonify(error="No se pudo extraer contenido"), 500
+        return jsonify(url=url, contenido=texto, imagen_url=img_url, imagen_base64=img_b64)
     finally:
         driver.quit()
 
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
