@@ -21,11 +21,11 @@ from urllib.parse import urljoin
 
 app = Flask(__name__)
 
-# Configuración del logger para imprimir mensajes en la terminal
+# Configuración del logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Diccionario para mapear nombres de meses en español a números
+# Diccionario para mapear meses en español a números
 MESES = {
     'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5,
     'junio': 6, 'julio': 7, 'agosto': 8, 'septiembre': 9,
@@ -78,33 +78,36 @@ def interactuar_con_pagina(driver, url):
     1) Abre la página principal (url).
     2) Hace scroll para cargar lazy-loading.
     3) Busca la miniatura del post más reciente usando varios selectores posibles.
-    4) Extrae post_url y texto del post, y descarga la miniatura como Base64.
+    4) Extrae post_url y texto del post, intentando primero div.elementor-widget-container,
+       y si no existe, busco dentro de <article> cualquier <p>.
+    5) Descarga la miniatura como Base64.
     Devuelve (texto_del_post, imagen_url, imagen_base64).
     """
     driver.get(url)
     logger.info(f"Navegando a la página principal: {driver.current_url}")
 
-    # Scroll en dos etapas para forzar la carga de imágenes lazy
+    # Scroll en dos etapas para forzar lazy-loading
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
     time.sleep(2)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     time.sleep(2)
 
-    # Esperar a que aparezca al menos un elemento que contenga imagen de post
+    # Esperar a que aparezca al menos un posible <img> de miniatura
     try:
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "article.elementor-post img, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img")
+                (By.CSS_SELECTOR,
+                 "img.wp-post-image, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img")
             )
         )
     except TimeoutException:
-        logger.error("No se encontró ninguna miniatura con los selectores esperados.")
+        logger.error("No se encontró ninguna miniatura usando los selectores establecidos.")
         return None, None, None
 
-    # Recopilar todas las posibles miniaturas según varios selectores
+    # Reunir todas las posibles miniaturas
     posibles_imgs = driver.find_elements(
         By.CSS_SELECTOR,
-        "article.elementor-post img, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img"
+        "img.wp-post-image, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img"
     )
 
     if not posibles_imgs:
@@ -113,12 +116,14 @@ def interactuar_con_pagina(driver, url):
 
     # Tomar la primera miniatura válida
     img_el = posibles_imgs[0]
-    # Subir al ancestro <a> para obtener post_url
+
+    # Subir al ancestro <a> que contenga '/blog/' para obtener post_url
+    post_url = None
     try:
         post_link_el = img_el.find_element(By.XPATH, "./ancestor::a[contains(@href, '/blog/')]")
         post_url = post_link_el.get_attribute("href")
-    except Exception as e:
-        logger.error(f"No se pudo extraer enlace del post desde la miniatura: {e}")
+    except NoSuchElementException:
+        logger.error("La miniatura no está dentro de un <a> que contenga '/blog/'.")
         return None, None, None
 
     # Extraer URL de la imagen
@@ -140,29 +145,32 @@ def interactuar_con_pagina(driver, url):
     # Navegar al post y extraer texto
     driver.get(post_url)
     logger.info(f"Navegando al post: {post_url}")
+
+    # Intentar extraer con Elementor
+    texto_extraido = ""
     try:
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.elementor-widget-container"))
         )
+        bloques = driver.find_elements(
+            By.CSS_SELECTOR,
+            "div.elementor-widget-container p, div.elementor-widget-container h2, div.elementor-widget-container h3"
+        )
+        texto_extraido = " ".join([b.text.strip() for b in bloques if b.text.strip()])
     except TimeoutException:
-        logger.error("No se cargó el contenido del post.")
-        return None, imagen_url, None
-
-    texto_extraido = ""
-    retries = 3
-    while retries:
+        # Si no hay elemento Elementor, buscar dentro de <article> cualquier <p>
+        logger.warning("No se encontró 'div.elementor-widget-container', intentando <article> <p>")
         try:
-            bloques = driver.find_elements(
-                By.CSS_SELECTOR,
-                "div.elementor-widget-container p, div.elementor-widget-container h2, div.elementor-widget-container h3"
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "article p"))
             )
-            texto_extraido = " ".join([b.text.strip() for b in bloques if b.text.strip()])
-            break
-        except StaleElementReferenceException:
-            retries -= 1
-            time.sleep(1)
+            parrafos = driver.find_elements(By.CSS_SELECTOR, "article p")
+            texto_extraido = " ".join([p.text.strip() for p in parrafos if p.text.strip()])
+        except TimeoutException:
+            logger.error("No se encontró <article> con <p> para extraer texto.")
+            return None, imagen_url, None
 
-    # Descargar la miniatura y convertir a Base64 (si existe)
+    # Descargar miniatura y convertir a Base64
     imagen_base64 = None
     if imagen_url:
         try:
@@ -180,8 +188,8 @@ def interactuar_con_pagina(driver, url):
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     """
-    Endpoint que recibe JSON {"url": "https://salesystems.es/blog"}
-    y retorna {"url":..., "contenido":..., "imagen_url":..., "imagen_base64":...}.
+    Endpoint que recibe JSON { "url": "https://salesystems.es/blog" }
+    y devuelve JSON { "url": ..., "contenido": ..., "imagen_url": ..., "imagen_base64": ... }.
     """
     driver = configurar_driver()
     try:
