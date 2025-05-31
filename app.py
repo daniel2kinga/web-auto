@@ -79,7 +79,7 @@ def interactuar_con_pagina(driver, url):
     2) Hace scroll para cargar lazy-loading.
     3) Busca la miniatura del post más reciente usando varios selectores posibles.
     4) Extrae post_url y texto del post, intentando primero div.elementor-widget-container,
-       y si no existe, busco dentro de <article> cualquier <p>.
+       y si no existe, busca dentro de <article> cualquier <p>.
     5) Descarga la miniatura como Base64.
     Devuelve (texto_del_post, imagen_url, imagen_base64).
     """
@@ -96,8 +96,10 @@ def interactuar_con_pagina(driver, url):
     try:
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located(
-                (By.CSS_SELECTOR,
-                 "img.wp-post-image, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img")
+                (
+                    By.CSS_SELECTOR,
+                    "img.wp-post-image, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img, article img"
+                )
             )
         )
     except TimeoutException:
@@ -107,7 +109,7 @@ def interactuar_con_pagina(driver, url):
     # Reunir todas las posibles miniaturas
     posibles_imgs = driver.find_elements(
         By.CSS_SELECTOR,
-        "img.wp-post-image, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img"
+        "img.wp-post-image, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img, article img"
     )
 
     if not posibles_imgs:
@@ -115,15 +117,22 @@ def interactuar_con_pagina(driver, url):
         return None, None, None
 
     # Tomar la primera miniatura válida
-    img_el = posibles_imgs[0]
-
-    # Subir al ancestro <a> que contenga '/blog/' para obtener post_url
+    img_el = None
     post_url = None
-    try:
-        post_link_el = img_el.find_element(By.XPATH, "./ancestor::a[contains(@href, '/blog/')]")
-        post_url = post_link_el.get_attribute("href")
-    except NoSuchElementException:
-        logger.error("La miniatura no está dentro de un <a> que contenga '/blog/'.")
+    for candidate in posibles_imgs:
+        # Intentar extraer el <a> ancestro sin filtrar por '/blog/'
+        try:
+            a_anc = candidate.find_element(By.XPATH, "./ancestor::a")
+            href = a_anc.get_attribute("href")
+            if href and href != url:  # descartar si apunta a la misma página
+                img_el = candidate
+                post_url = href
+                break
+        except NoSuchElementException:
+            continue
+
+    if not img_el or not post_url:
+        logger.error("No se pudo encontrar una miniatura dentro de un <a> válido.")
         return None, None, None
 
     # Extraer URL de la imagen
@@ -146,8 +155,8 @@ def interactuar_con_pagina(driver, url):
     driver.get(post_url)
     logger.info(f"Navegando al post: {post_url}")
 
-    # Intentar extraer con Elementor
     texto_extraido = ""
+    # Intentar extraer con Elementor
     try:
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.elementor-widget-container"))
@@ -170,7 +179,7 @@ def interactuar_con_pagina(driver, url):
             logger.error("No se encontró <article> con <p> para extraer texto.")
             return None, imagen_url, None
 
-    # Descargar miniatura y convertir a Base64
+    # Descargar miniatura y convertir a Base64 (si existe)
     imagen_base64 = None
     if imagen_url:
         try:
@@ -188,8 +197,8 @@ def interactuar_con_pagina(driver, url):
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     """
-    Endpoint que recibe JSON { "url": "https://salesystems.es/blog" }
-    y devuelve JSON { "url": ..., "contenido": ..., "imagen_url": ..., "imagen_base64": ... }.
+    Endpoint que recibe JSON {"url": "https://salesystems.es/blog"}
+    y devuelve JSON {"url": ..., "contenido": ..., "imagen_url": ..., "imagen_base64": ...}.
     """
     driver = configurar_driver()
     try:
