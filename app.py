@@ -1,7 +1,8 @@
 import os
+import time
 import base64
 import requests
-import time
+import logging
 from urllib.parse import urljoin
 from datetime import datetime
 from flask import Flask, request, jsonify
@@ -16,92 +17,98 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 app = Flask(__name__)
 
-# Diccionario para mapear los nombres de meses en español a números
-MESES = {m: i for i, m in enumerate(
-    ['enero','febrero','marzo','abril','mayo','junio',
-     'julio','agosto','septiembre','octubre','noviembre','diciembre'], 1)}
+# Configuración del logger para imprimir mensajes en la terminal
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# ---------- CONFIGURAR CHROME HEADLESS ----------
+# Diccionario para mapear los nombres de meses en español a números
+MESES = {
+    'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5,
+    'junio': 6, 'julio': 7, 'agosto': 8, 'septiembre': 9,
+    'octubre': 10, 'noviembre': 11, 'diciembre': 12
+}
+
 def configurar_driver():
+    """Configura Chrome en modo headless y devuelve el driver."""
     chrome_options = Options()
-    chrome_options.add_argument("--headless=new")     # Modo headless (Chrome 121+)
+    # Modo headless (requiere Chrome 121+ para "--headless=new")
+    chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
+    # Opciones para evitar detección de automatización (opcional)
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=chrome_options)
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    return driver
 
-# ---------- PARSEAR FECHA ----------
 def parsear_fecha(fecha_str):
+    """
+    Convierte una fecha en español a un objeto datetime.
+    Ejemplos de formatos esperados: "12 de mayo de 2025", "12 mayo 2025", "12 mayo".
+    """
     try:
         partes = fecha_str.lower().replace(',', '').split()
         dia = int(partes[0])
-        mes = MESES[partes[1]]
-        anio = int(partes[2]) if len(partes) == 3 else datetime.now().year
+        mes = MESES.get(partes[1])
+        if not mes:
+            return None
+        # Si incluyen año, está en la posición 2; si no, usamos el año actual.
+        if len(partes) == 3:
+            anio = int(partes[2])
+        else:
+            anio = datetime.now().year
         return datetime(anio, mes, dia)
     except Exception as e:
-        app.logger.error(f"Fecha inválida '{fecha_str}': {e}")
+        app.logger.error(f"Error al parsear la fecha '{fecha_str}': {e}")
         return None
 
-# ---------- EXTRAER URL DE IMAGEN ----------
-def extraer_url_imagen(img_el, base_url):
-    """
-    Devuelve la mejor URL de una etiqueta <img> o None.
-    Prueba src, data-src, data-lazy-src, data-thumb, y srcset.
-    Si es relativa, hace urljoin con base_url.
-    """
-    # 1) Intentar atributos comunes
-    cand = (
-        img_el.get_attribute("src") or
-        img_el.get_attribute("data-src") or
-        img_el.get_attribute("data-lazy-src") or
-        img_el.get_attribute("data-thumb") or
-        ""
-    )
-    # 2) Si sigue vacío, revisar srcset (tomar la última URL, que suele ser la mayor resolución)
-    if not cand:
-        srcset = img_el.get_attribute("srcset")
-        if srcset:
-            partes = [p.strip() for p in srcset.split(',')]
-            # cada parte es "url tamaño", tomamos la que esté al final
-            ultima = partes[-1].split()[0]
-            cand = ultima
-
-    if cand and not cand.startswith(("http://", "https://")):
-        cand = urljoin(base_url, cand)
-    return cand if cand else None
-
-# ---------- LÓGICA PRINCIPAL ----------
 def interactuar_con_pagina(driver, url):
+    """
+    Abre la página principal (url), extrae la entrada más reciente (por fecha),
+    recupera la miniatura (img) de esa entrada y luego extrae el contenido del post.
+    Devuelve (texto_del_post, imagen_url, imagen_base64) o (None, None, None) en caso de fallo.
+    """
     driver.get(url)
-    app.logger.info(f"Página inicial: {driver.current_url}")
+    app.logger.info(f"Navegando a la página principal: {driver.current_url}")
 
-    # 1) Esperar a que aparezcan las tarjetas
-    WebDriverWait(driver, 15).until(
-        EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.eael-grid-post-holder-inner"))
-    )
-    tarjetas = driver.find_elements(By.CSS_SELECTOR, "div.eael-grid-post-holder-inner")
+    # (Opcional) Depuración: vuelca el HTML completo a los logs para inspección
+    app.logger.info("=== INICIO HTML de la página principal ===")
+    app.logger.info(driver.page_source)
+    app.logger.info("=== FIN HTML de la página principal ===")
 
+    # Esperar hasta que aparezcan las tarjetas de post (ejemplo: <article class="post">)
+    try:
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "article.post"))
+        )
+    except Exception as e:
+        app.logger.error(f"No se encontraron elementos 'article.post': {e}")
+        return None, None, None
+
+    tarjetas = driver.find_elements(By.CSS_SELECTOR, "article.post")
     entradas = []
+
     for t in tarjetas:
         try:
-            # 2) Extraer y parsear la fecha
+            # 1) Extraer y parsear la fecha
             time_element = t.find_element(By.CSS_SELECTOR, "time")
-            fecha_txt = time_element.text.strip()
-            fecha = parsear_fecha(fecha_txt)
+            fecha_str = time_element.text.strip()
+            fecha = parsear_fecha(fecha_str)
             if not fecha:
                 continue
 
-            # 3) Extraer el enlace del post
-            enlace = t.find_element(By.CSS_SELECTOR, "a.eael-grid-post-link")
+            # 2) Extraer el enlace al post (dentro del título h2.entry-title > a)
+            enlace = t.find_element(By.CSS_SELECTOR, "h2.entry-title a")
             post_url = enlace.get_attribute("href")
 
-            # 4) Intentar extraer el <img> dentro del enlace; si falla, img_el = None
+            # 3) Extraer la miniatura:
+            #    Suponemos que la miniatura está en <a class="post-thumbnail"><img class="wp-post-image"></a>
             try:
-                img_el = enlace.find_element(By.CSS_SELECTOR, "img")
+                img_el = t.find_element(By.CSS_SELECTOR, "a.post-thumbnail img.wp-post-image")
             except Exception:
-                img_el = None
+                img_el = None  # No se encontró el <img> con esas clases
 
             entradas.append({
                 "fecha": fecha,
@@ -113,43 +120,58 @@ def interactuar_con_pagina(driver, url):
             continue
 
     if not entradas:
-        app.logger.error("No se encontraron entradas con fecha válida")
+        app.logger.error("No se encontraron entradas con fecha válida.")
         return None, None, None
 
-    # 5) Seleccionar la entrada más reciente
-    entrada = max(entradas, key=lambda x: x["fecha"])
+    # Seleccionar la entrada más reciente por fecha
+    entrada_mas_reciente = max(entradas, key=lambda x: x["fecha"])
 
-    # 6) Extraer URL de la imagen de la tarjeta (si existe)
+    # Extraer URL de la imagen (miniatura) si existe
     imagen_url = None
-    if entrada["img_el"]:
-        imagen_url = extraer_url_imagen(entrada["img_el"], url)
+    if entrada_mas_reciente["img_el"]:
+        img_el = entrada_mas_reciente["img_el"]
+        # Intentar primero src, luego data-src
+        imagen_url = img_el.get_attribute("src") or img_el.get_attribute("data-src")
+        # Si está en srcset, tomar la última URL
+        if not imagen_url:
+            srcset = img_el.get_attribute("srcset")
+            if srcset:
+                # Partimos por comas: "url1 300w, url2 1024w" -> tomamos url2
+                partes = [parte.strip() for parte in srcset.split(",")]
+                if partes:
+                    ultima = partes[-1].split()[0]
+                    imagen_url = ultima if ultima.startswith(("http://", "https://")) else urljoin(url, ultima)
 
-    # 7) Navegar al post y extraer texto
-    driver.get(entrada["url"])
-    app.logger.info(f"Entrando al post: {entrada['url']}")
+    # Navegar a la página del post para extraer el contenido de texto
+    driver.get(entrada_mas_reciente["url"])
+    app.logger.info(f"Navegando al post: {entrada_mas_reciente['url']}")
 
-    WebDriverWait(driver, 15).until(
-        EC.presence_of_element_located((By.CSS_SELECTOR, "div.elementor-widget-container"))
-    )
+    try:
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div.elementor-widget-container"))
+        )
+    except Exception as e:
+        app.logger.error(f"No se pudo cargar el contenido del post: {e}")
+        return None, imagen_url, None
 
-    # 8) Reintentar extracción de texto para evitar StaleElementReferenceException
+    # Extraer texto: párrafos y encabezados dentro de div.elementor-widget-container
     retries = 3
     texto_extraido = ""
     while retries:
         try:
-            elementos_contenido = driver.find_elements(
+            bloques = driver.find_elements(
                 By.CSS_SELECTOR,
                 "div.elementor-widget-container p, div.elementor-widget-container h2, div.elementor-widget-container h3"
             )
             texto_extraido = " ".join(
-                e.text.strip() for e in elementos_contenido if e.text.strip()
+                b.text.strip() for b in bloques if b.text.strip()
             )
             break
         except StaleElementReferenceException:
             retries -= 1
             time.sleep(1)
 
-    # 9) Descargar la imagen (opcional) y convertir a base64
+    # Convertir la imagen a Base64 (si tenemos URL)
     imagen_base64 = None
     if imagen_url:
         try:
@@ -157,23 +179,27 @@ def interactuar_con_pagina(driver, url):
             if respuesta.status_code == 200:
                 imagen_base64 = base64.b64encode(respuesta.content).decode("utf-8")
         except Exception as e:
-            app.logger.error(f"No se pudo descargar la imagen: {e}")
+            app.logger.error(f"Error descargando la imagen: {e}")
 
     return texto_extraido, imagen_url, imagen_base64
 
-# ---------- ENDPOINT FLASK ----------
-@app.route("/extraer", methods=["POST"])
+@app.route('/extraer', methods=['POST'])
 def extraer_pagina():
-    data = request.json or {}
-    url = data.get("url")
-    if not url:
-        return jsonify({"error": "No se proporcionó URL"}), 400
-
+    """Endpoint Flask para extraer contenido e imagen del post más reciente."""
     driver = configurar_driver()
     try:
+        data = request.json
+        if not data or 'url' not in data:
+            return jsonify({"error": "No se proporcionó URL"}), 400
+
+        url = data['url']
+        logger.info(f"Recibida petición para extraer de: {url}")
+
         texto, img_url, img_b64 = interactuar_con_pagina(driver, url)
+
         if texto is None:
-            return jsonify({"error": "No se pudo extraer contenido"}), 500
+            return jsonify({"error": "No se pudo extraer el contenido"}), 500
+
         return jsonify({
             "url": url,
             "contenido": texto,
@@ -181,11 +207,11 @@ def extraer_pagina():
             "imagen_base64": img_b64
         })
     except Exception as e:
-        app.logger.error(f"Error en /extraer: {e}")
+        logger.exception(f"Error en /extraer: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         driver.quit()
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
