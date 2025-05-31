@@ -11,16 +11,21 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import StaleElementReferenceException
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    StaleElementReferenceException,
+    TimeoutException
+)
 from webdriver_manager.chrome import ChromeDriverManager
+from urllib.parse import urljoin
 
 app = Flask(__name__)
 
-# Configurar logger
+# Configuración del logger para imprimir mensajes en la terminal
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Diccionario para mapear meses en español a números
+# Diccionario para mapear nombres de meses en español a números
 MESES = {
     'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5,
     'junio': 6, 'julio': 7, 'agosto': 8, 'septiembre': 9,
@@ -33,7 +38,7 @@ def configurar_driver():
     Configura y devuelve un Chrome WebDriver en modo headless.
     """
     options = Options()
-    # Para Chrome versión 121+: usar "--headless=new"
+    # Para Chrome 121+:
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
@@ -50,7 +55,7 @@ def configurar_driver():
 def parsear_fecha(fecha_str):
     """
     Convierte una fecha en español a un objeto datetime.
-    Ejemplos de formatos: "12 de mayo de 2025", "12 mayo 2025", "12 mayo".
+    Ejemplos: "12 de mayo de 2025", "12 mayo 2025", "12 mayo".
     """
     try:
         partes = fecha_str.lower().replace(',', '').split()
@@ -70,99 +75,77 @@ def parsear_fecha(fecha_str):
 
 def interactuar_con_pagina(driver, url):
     """
-    1) Abre la página principal.
-    2) Hace scroll para forzar carga de lazy-loading.
-    3) Espera a que aparezcan tarjetas con la clase 'eael-grid-post-holder-inner'.
-    4) Extrae fecha, enlace y miniatura del post más reciente.
-    5) Navega al post y extrae el texto dentro de 'div.elementor-widget-container'.
-    6) Descarga la miniatura y la convierte a Base64.
-    Devuelve (texto_del_post, imagen_url, imagen_base64) o (None, None, None) en caso de fallo.
+    1) Abre la página principal (url).
+    2) Hace scroll para cargar lazy-loading.
+    3) Busca la miniatura del post más reciente usando varios selectores posibles.
+    4) Extrae post_url y texto del post, y descarga la miniatura como Base64.
+    Devuelve (texto_del_post, imagen_url, imagen_base64).
     """
     driver.get(url)
     logger.info(f"Navegando a la página principal: {driver.current_url}")
 
-    # 2) Hacer scroll hacia abajo en 2 etapas para cargar imágenes lazy
+    # Scroll en dos etapas para forzar la carga de imágenes lazy
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
     time.sleep(2)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
     time.sleep(2)
 
-    # 3) Esperar hasta que aparezcan tarjetas con clase 'eael-grid-post-holder-inner'
+    # Esperar a que aparezca al menos un elemento que contenga imagen de post
     try:
         WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.eael-grid-post-holder-inner"))
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "article.elementor-post img, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img")
+            )
         )
+    except TimeoutException:
+        logger.error("No se encontró ninguna miniatura con los selectores esperados.")
+        return None, None, None
+
+    # Recopilar todas las posibles miniaturas según varios selectores
+    posibles_imgs = driver.find_elements(
+        By.CSS_SELECTOR,
+        "article.elementor-post img, div.eael-grid-post-holder-inner img, a[href*='/blog/'] img"
+    )
+
+    if not posibles_imgs:
+        logger.error("No hay elementos <img> de miniatura en la página.")
+        return None, None, None
+
+    # Tomar la primera miniatura válida
+    img_el = posibles_imgs[0]
+    # Subir al ancestro <a> para obtener post_url
+    try:
+        post_link_el = img_el.find_element(By.XPATH, "./ancestor::a[contains(@href, '/blog/')]")
+        post_url = post_link_el.get_attribute("href")
     except Exception as e:
-        logger.error(f"No se encontraron elementos 'div.eael-grid-post-holder-inner': {e}")
+        logger.error(f"No se pudo extraer enlace del post desde la miniatura: {e}")
         return None, None, None
 
-    tarjetas = driver.find_elements(By.CSS_SELECTOR, "div.eael-grid-post-holder-inner")
-    entradas = []
+    # Extraer URL de la imagen
+    imagen_url = img_el.get_attribute("src") or img_el.get_attribute("data-src")
+    if not imagen_url:
+        srcset = img_el.get_attribute("srcset")
+        if srcset:
+            partes = [p.strip() for p in srcset.split(",")]
+            if partes:
+                ultima = partes[-1].split()[0]
+                if ultima.startswith(("http://", "https://")):
+                    imagen_url = ultima
+                else:
+                    imagen_url = urljoin(url, ultima)
 
-    for t in tarjetas:
-        try:
-            # Extraer y parsear la fecha
-            time_element = t.find_element(By.CSS_SELECTOR, "time")
-            fecha_str = time_element.text.strip()
-            fecha = parsear_fecha(fecha_str)
-            if not fecha:
-                continue
-
-            # Extraer enlace al post
-            enlace = t.find_element(By.CSS_SELECTOR, "a.eael-grid-post-link")
-            post_url = enlace.get_attribute("href")
-
-            # Extraer miniatura: <img> dentro de 'a.eael-grid-post-link'
-            try:
-                img_el = enlace.find_element(By.CSS_SELECTOR, "img")
-            except Exception:
-                img_el = None
-
-            entradas.append({
-                "fecha": fecha,
-                "url": post_url,
-                "img_el": img_el
-            })
-        except Exception as e:
-            logger.error(f"Tarjeta ignorada (fecha/enlace): {e}")
-            continue
-
-    if not entradas:
-        logger.error("No se encontraron entradas con fecha válida")
-        return None, None, None
-
-    # 4) Tomar la entrada más reciente
-    entrada_mas_reciente = max(entradas, key=lambda x: x["fecha"])
-
-    # Extraer URL de la miniatura (si existe)
-    imagen_url = None
-    if entrada_mas_reciente["img_el"]:
-        img_el = entrada_mas_reciente["img_el"]
-        imagen_url = img_el.get_attribute("src") or img_el.get_attribute("data-src")
-        if not imagen_url:
-            srcset = img_el.get_attribute("srcset")
-            if srcset:
-                partes = [p.strip() for p in srcset.split(",")]
-                if partes:
-                    ultima = partes[-1].split()[0]
-                    if ultima.startswith(("http://", "https://")):
-                        imagen_url = ultima
-                    else:
-                        from urllib.parse import urljoin
-                        imagen_url = urljoin(url, ultima)
-
-    logger.info(f"Post más reciente: {entrada_mas_reciente['url']}")
+    logger.info(f"Post más reciente: {post_url}")
     logger.info(f"Miniatura URL: {imagen_url}")
 
-    # 5) Navegar al post y extraer texto
-    driver.get(entrada_mas_reciente["url"])
-    logger.info(f"Navegando al post: {entrada_mas_reciente['url']}")
+    # Navegar al post y extraer texto
+    driver.get(post_url)
+    logger.info(f"Navegando al post: {post_url}")
     try:
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "div.elementor-widget-container"))
         )
-    except Exception as e:
-        logger.error(f"No se cargó contenido del post: {e}")
+    except TimeoutException:
+        logger.error("No se cargó el contenido del post.")
         return None, imagen_url, None
 
     texto_extraido = ""
@@ -179,7 +162,7 @@ def interactuar_con_pagina(driver, url):
             retries -= 1
             time.sleep(1)
 
-    # 6) Descargar la miniatura y convertir a Base64 (si existe)
+    # Descargar la miniatura y convertir a Base64 (si existe)
     imagen_base64 = None
     if imagen_url:
         try:
@@ -187,7 +170,7 @@ def interactuar_con_pagina(driver, url):
             if resp.status_code == 200:
                 imagen_base64 = base64.b64encode(resp.content).decode("utf-8")
             else:
-                logger.warning(f"Respuesta HTTP {resp.status_code} al descargar miniatura.")
+                logger.warning(f"HTTP {resp.status_code} al descargar la miniatura.")
         except Exception as e:
             logger.error(f"Error descargando la imagen: {e}")
 
@@ -197,8 +180,8 @@ def interactuar_con_pagina(driver, url):
 @app.route('/extraer', methods=['POST'])
 def extraer_pagina():
     """
-    Endpoint Flask que recibe JSON: { "url": "https://salesystems.es/blog" }
-    Devuelve { "url": ..., "contenido": ..., "imagen_url": ..., "imagen_base64": ... }.
+    Endpoint que recibe JSON {"url": "https://salesystems.es/blog"}
+    y retorna {"url":..., "contenido":..., "imagen_url":..., "imagen_base64":...}.
     """
     driver = configurar_driver()
     try:
