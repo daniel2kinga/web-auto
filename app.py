@@ -3,7 +3,6 @@ import time
 import base64
 import requests
 import logging
-import re
 from datetime import datetime
 from flask import Flask, request, jsonify
 from selenium import webdriver
@@ -14,20 +13,17 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (
     NoSuchElementException,
+    StaleElementReferenceException,
     TimeoutException
 )
 from webdriver_manager.chrome import ChromeDriverManager
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 app = Flask(__name__)
 
 # Configuración del logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Carpeta donde se guardará la imagen descargada
-DOWNLOAD_DIR = "downloaded_images"
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 # Diccionario para mapear meses en español a números
 MESES = {
@@ -37,49 +33,26 @@ MESES = {
 }
 
 
-def sanitize_filename(text: str) -> str:
-    """
-    Convierte un texto en un nombre de archivo válido:
-    - Minúsculas
-    - Sin caracteres no alfanuméricos (excepto guiones bajos y guiones)
-    - Espacios reemplazados por guiones bajos
-    """
-    text = text.strip().lower()
-    text = re.sub(r'[^\w\s-]', '', text, flags=re.UNICODE)
-    text = re.sub(r'[\s]+', '_', text)
-    return text
-
-
-def unique_filename(directory: str, base_name: str, ext: str) -> str:
-    """
-    Genera un nombre de archivo único en 'directory', usando 'base_name' y 'ext'.
-    Si 'base_name.ext' existe, genera 'base_name_1.ext', 'base_name_2.ext', etc.
-    """
-    candidate = f"{base_name}{ext}"
-    i = 1
-    while os.path.exists(os.path.join(directory, candidate)):
-        candidate = f"{base_name}_{i}{ext}"
-        i += 1
-    return candidate
-
-
 def configurar_driver():
     """
     Configura y devuelve un Chrome WebDriver en modo headless.
     """
     options = Options()
-    options.add_argument("--headless=new")  # Para Chrome v121+
+    # Para Chrome 121+:
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+    # Evitar detección de automatización
     options.add_argument("--disable-blink-features=AutomationControlled")
+
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     return driver
 
 
-def parsear_fecha(fecha_str: str):
+def parsear_fecha(fecha_str):
     """
     Convierte una fecha en español a un objeto datetime.
     Ejemplos: "12 de mayo de 2025", "12 mayo 2025", "12 mayo".
@@ -103,33 +76,16 @@ def parsear_fecha(fecha_str: str):
 def interactuar_con_pagina(driver, url):
     """
     1) Abre la página principal (url).
-    2) Hace scroll para cargar imágenes lazy.
-    3) Encuentra TODAS las tarjetas de post (div.eael-grid-post-holder-inner).
-    4) Para cada tarjeta, extrae:
-         - Fecha del post.
-         - Título del post.
-         - URL de la miniatura.
-         - Enlace al post.
-    5) Selecciona la tarjeta con la fecha más reciente.
-    6) Para esa tarjeta:
-         - Genera un nombre de archivo único basado en el título.
-         - Descarga la imagen y la guarda localmente.
-         - Abre el post y extrae todo el texto.
-         - Codifica la imagen guardada a Base64.
-    Devuelve un dict con:
-    {
-      "title": título,
-      "text": contenido del post,
-      "image_url": URL de la miniatura,
-      "saved_filename": nombre de archivo local,
-      "image_base64": cadena Base64
-    }
-    Si falla en cualquier paso, devuelve None.
+    2) Hace scroll para cargar lazy-loading.
+    3) Busca la tarjeta del post más reciente: parsea fecha, enlace y miniatura.
+    4) Extrae post_url y texto del post (dentro de div.elementor-widget-container o <article> <p>).
+    5) Descarga la miniatura y la convierte a Base64.
+    Devuelve (texto_del_post, imagen_url, imagen_base64).
     """
     driver.get(url)
     logger.info(f"Navegando a la página principal: {driver.current_url}")
 
-    # Scroll para forzar carga lazy-loading
+    # Scroll en dos etapas para forzar lazy-loading
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight/2);")
     time.sleep(2)
     driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -142,101 +98,77 @@ def interactuar_con_pagina(driver, url):
         )
     except TimeoutException:
         logger.error("No se encontraron elementos 'div.eael-grid-post-holder-inner'.")
-        return None
+        return None, None, None
 
     tarjetas = driver.find_elements(By.CSS_SELECTOR, "div.eael-grid-post-holder-inner")
-    posts_info = []
+    entradas = []
 
-    for tarjeta in tarjetas:
+    for t in tarjetas:
         try:
-            # Extraer fecha del post
-            try:
-                time_el = tarjeta.find_element(By.CSS_SELECTOR, "time")
-                fecha_obj = parsear_fecha(time_el.text.strip())
-            except NoSuchElementException:
-                fecha_obj = None
+            # Extraer y parsear la fecha
+            time_element = t.find_element(By.CSS_SELECTOR, "time")
+            fecha_str = time_element.text.strip()
+            fecha = parsear_fecha(fecha_str)
+            if not fecha:
+                continue
 
-            # Extraer título del post
-            try:
-                titulo_el = tarjeta.find_element(By.CSS_SELECTOR, "h2.entry-title a")
-                titulo = titulo_el.text.strip() or "sin_titulo"
-            except NoSuchElementException:
-                titulo = "sin_titulo"
+            # Extraer el enlace al post (a.eael-grid-post-link)
+            enlace = t.find_element(By.CSS_SELECTOR, "a.eael-grid-post-link")
+            post_url = enlace.get_attribute("href")
 
-            # Extraer enlace al post
+            # Extraer miniatura: el <img> dentro de la propia tarjeta
+            # Buscamos primero <img.decoding>, luego fallback a cualquier <img>
             try:
-                post_url = tarjeta.find_element(By.CSS_SELECTOR, "h2.entry-title a").get_attribute("href")
-            except NoSuchElementException:
-                post_url = None
-
-            # Extraer URL de la miniatura
-            try:
-                img_el = tarjeta.find_element(By.CSS_SELECTOR, "img.entered.lazyloaded")
+                # Según el HTML que diste, el <img> tiene clases "entered lazyloaded" y atributos data-lazy-src
+                img_el = t.find_element(By.CSS_SELECTOR, "img.entered.lazyloaded")
             except NoSuchElementException:
                 try:
-                    img_el = tarjeta.find_element(By.TAG_NAME, "img")
+                    img_el = t.find_element(By.TAG_NAME, "img")
                 except NoSuchElementException:
                     img_el = None
 
-            if img_el:
-                imagen_url = img_el.get_attribute("data-lazy-src") or img_el.get_attribute("src")
-                if not imagen_url:
-                    srcset = img_el.get_attribute("data-lazy-srcset") or img_el.get_attribute("srcset")
-                    if srcset:
-                        partes = [p.strip().split()[0] for p in srcset.split(",") if p.strip()]
-                        if partes:
-                            ultima = partes[-1]
-                            imagen_url = ultima if ultima.startswith(("http://", "https://")) else urljoin(url, ultima)
-            else:
-                imagen_url = None
-
-            posts_info.append({
-                "fecha": fecha_obj,
-                "title": titulo,
-                "post_url": post_url,
-                "image_url": imagen_url
+            entradas.append({
+                "fecha": fecha,
+                "url": post_url,
+                "img_el": img_el
             })
-
         except Exception as e:
-            logger.error(f"Error procesando una tarjeta: {e}")
+            logger.error(f"Tarjeta ignorada (fecha/enlace): {e}")
             continue
 
-    # Filtrar solo las tarjetas con fecha válida
-    posts_validos = [p for p in posts_info if p["fecha"] is not None and p["post_url"] and p["image_url"]]
-    if not posts_validos:
-        logger.error("No se encontraron posts válidos con fecha, título y miniatura.")
-        return None
+    if not entradas:
+        logger.error("No se encontraron entradas con fecha válida.")
+        return None, None, None
 
-    # Seleccionar el post más reciente
-    post_mas_reciente = max(posts_validos, key=lambda x: x["fecha"])
-    titulo = post_mas_reciente["title"]
-    imagen_url = post_mas_reciente["image_url"]
-    post_url = post_mas_reciente["post_url"]
+    # Seleccionar la entrada más reciente
+    entrada_mas_reciente = max(entradas, key=lambda x: x["fecha"])
 
-    # Generar nombre de archivo único
-    ext = os.path.splitext(urlparse(imagen_url).path)[1] or ".jpg"
-    base_name = sanitize_filename(titulo)
-    nuevo_nombre = unique_filename(DOWNLOAD_DIR, base_name, ext)
-    saved_path = os.path.join(DOWNLOAD_DIR, nuevo_nombre)
+    # Extraer URL de la miniatura (si existe)
+    imagen_url = None
+    if entrada_mas_reciente["img_el"]:
+        img_el = entrada_mas_reciente["img_el"]
+        # Intentar src primero, luego data-lazy-src
+        imagen_url = img_el.get_attribute("src") or img_el.get_attribute("data-lazy-src")
+        if not imagen_url:
+            # Fallback a data-src (por si las etiquetas cambian)
+            imagen_url = img_el.get_attribute("data-src")
+        if not imagen_url:
+            # Chequear srcset para mayor resolución
+            srcset = img_el.get_attribute("srcset") or img_el.get_attribute("data-lazy-srcset")
+            if srcset:
+                partes = [p.strip().split()[0] for p in srcset.split(",") if p.strip()]
+                if partes:
+                    última = partes[-1]
+                    imagen_url = última if última.startswith(("http://", "https://")) else urljoin(url, última)
 
-    # Descargar y guardar la imagen
-    try:
-        resp = requests.get(imagen_url, headers={"User-Agent": "Mozilla/5.0"})
-        if resp.status_code == 200:
-            with open(saved_path, "wb") as f:
-                f.write(resp.content)
-        else:
-            logger.error(f"HTTP {resp.status_code} al descargar imagen: {imagen_url}")
-            return None
-    except Exception as e:
-        logger.error(f"Error descargando la imagen: {e}")
-        return None
+    logger.info(f"Post más reciente: {entrada_mas_reciente['url']}")
+    logger.info(f"Miniatura URL: {imagen_url}")
 
-    # Extraer el contenido del post
-    driver.get(post_url)
-    logger.info(f"Navegando al post: {post_url}")
+    # Navegar al post y extraer texto
+    driver.get(entrada_mas_reciente["url"])
+    logger.info(f"Navegando al post: {entrada_mas_reciente['url']}")
+
     texto_extraido = ""
-
     # Intentar extraer con Elementor
     try:
         WebDriverWait(driver, 15).until(
@@ -248,7 +180,7 @@ def interactuar_con_pagina(driver, url):
         )
         texto_extraido = " ".join([b.text.strip() for b in bloques if b.text.strip()])
     except TimeoutException:
-        # Fallback: extraer cualquier párrafo dentro de <article>
+        # Si no se encuentra el contenedor de Elementor, fallback a <article> <p>
         logger.warning("No se encontró 'div.elementor-widget-container', intentando <article> <p>.")
         try:
             WebDriverWait(driver, 10).until(
@@ -258,37 +190,28 @@ def interactuar_con_pagina(driver, url):
             texto_extraido = " ".join([p.text.strip() for p in parrafos if p.text.strip()])
         except TimeoutException:
             logger.error("No se encontró <article> con <p> para extraer texto.")
-            texto_extraido = ""
+            return None, imagen_url, None
 
-    # Convertir la imagen guardada a Base64
+    # Descargar miniatura y convertir a Base64 (si existe)
     imagen_base64 = None
-    try:
-        with open(saved_path, "rb") as f:
-            imagen_base64 = base64.b64encode(f.read()).decode("utf-8")
-    except Exception as e:
-        logger.error(f"Error codificando la imagen a Base64: {e}")
+    if imagen_url:
+        try:
+            resp = requests.get(imagen_url, headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code == 200:
+                imagen_base64 = base64.b64encode(resp.content).decode("utf-8")
+            else:
+                logger.warning(f"HTTP {resp.status_code} al descargar la miniatura.")
+        except Exception as e:
+            logger.error(f"Error descargando la imagen: {e}")
 
-    return {
-        "title": titulo,
-        "text": texto_extraido,
-        "image_url": imagen_url,
-        "saved_filename": nuevo_nombre,
-        "image_base64": imagen_base64
-    }
+    return texto_extraido, imagen_url, imagen_base64
 
 
-@app.route('/extraer_imagen', methods=['POST'])
-def extraer_imagen():
+@app.route('/extraer', methods=['POST'])
+def extraer_pagina():
     """
     Endpoint que recibe JSON {"url": "https://salesystems.es/blog"}
-    y devuelve el post más reciente con su imagen:
-    {
-      "title": "...",
-      "text": "...",
-      "image_url": "...",
-      "saved_filename": "...",
-      "image_base64": "..."
-    }
+    y devuelve JSON {"url": ..., "contenido": ..., "imagen_url": ..., "imagen_base64": ...}.
     """
     driver = configurar_driver()
     try:
@@ -299,13 +222,18 @@ def extraer_imagen():
         url = data['url']
         logger.info(f"Procesando petición para URL: {url}")
 
-        resultado = interactuar_con_pagina(driver, url)
-        if not resultado:
-            return jsonify({"error": "No se pudo extraer el post más reciente"}), 500
+        texto, img_url, img_b64 = interactuar_con_pagina(driver, url)
+        if texto is None:
+            return jsonify({"error": "No se pudo extraer el contenido"}), 500
 
-        return jsonify(resultado)
+        return jsonify({
+            "url": url,
+            "contenido": texto,
+            "imagen_url": img_url,
+            "imagen_base64": img_b64
+        })
     except Exception as e:
-        logger.exception(f"Error en /extraer_imagen: {e}")
+        logger.exception(f"Error en /extraer: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         driver.quit()
